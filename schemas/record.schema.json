@@ -1,0 +1,297 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://fayegram.ai/decision-bridge-connectors/report-v3.schema.json",
+    "title": "Connector execution summary",
+    "type": "object",
+    "required": [
+        "schemaVersion",
+        "taskId",
+        "namespace",
+        "flow",
+        "flowRevision",
+        "status",
+        "settled",
+        "requiredSettled",
+        "createdAt",
+        "updatedAt",
+        "evaluation",
+        "policyCounts",
+        "deliveryCounts",
+        "chainCounts",
+        "errorCount",
+        "lineage",
+        "reply",
+        "sourceAcknowledgement"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "schemaVersion": {
+            "const": 3
+        },
+        "taskId": {
+            "type": "string"
+        },
+        "namespace": {
+            "type": "string"
+        },
+        "flow": {
+            "type": "string"
+        },
+        "flowRevision": {
+            "type": "string"
+        },
+        "status": {
+            "enum": [
+                "running",
+                "completed",
+                "partial",
+                "failed",
+                "unknown",
+                "cancelled"
+            ]
+        },
+        "settled": {
+            "type": "boolean"
+        },
+        "requiredSettled": {
+            "type": "boolean"
+        },
+        "createdAt": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "updatedAt": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "evaluation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "id",
+                "status",
+                "hasResult"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "hasResult": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "policyCounts": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+            }
+        },
+        "deliveryCounts": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+            }
+        },
+        "chainCounts": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+            }
+        },
+        "errorCount": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "lineage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "rootId",
+                "depth",
+                "maxDepth",
+                "maxExecutions"
+            ],
+            "properties": {
+                "rootId": {
+                    "type": "string"
+                },
+                "depth": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "maxDepth": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "maxExecutions": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "reply": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "sourceAcknowledgement": {
+            "type": "object",
+            "required": [
+                "status"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "data": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "entity",
+                    "entityId",
+                    "path",
+                    "bytes",
+                    "sha256",
+                    "kind",
+                    "value"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "entity": {
+                        "enum": [
+                            "task",
+                            "job"
+                        ]
+                    },
+                    "entityId": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "bytes": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "kind": {
+                        "enum": [
+                            "json",
+                            "plan",
+                            "diagnostic"
+                        ]
+                    },
+                    "responseUnavailable": {
+                        "const": true
+                    },
+                    "value": {}
+                },
+                "additionalProperties": false
+            }
+        },
+        "dataComplete": {
+            "type": "boolean"
+        },
+        "dataOmitted": {
+            "type": "array",
+            "maxItems": 25,
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "entity",
+                    "entityId",
+                    "path",
+                    "bytes",
+                    "sha256",
+                    "kind"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "entity": {
+                        "enum": [
+                            "task",
+                            "job"
+                        ]
+                    },
+                    "entityId": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "bytes": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "kind": {
+                        "enum": [
+                            "json",
+                            "plan",
+                            "diagnostic"
+                        ]
+                    },
+                    "responseUnavailable": {
+                        "const": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "omittedCount": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "dataError": {
+            "type": "object",
+            "required": [
+                "code",
+                "message"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

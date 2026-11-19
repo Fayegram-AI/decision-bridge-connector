@@ -1,0 +1,61 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified archive to npm
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: npm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: Verify release tag
+        run: node --input-type=module -e "import fs from 'node:fs'; const p = JSON.parse(fs.readFileSync('package.json')); if (process.env.GITHUB_REF !== 'refs/tags/v' + p.version) throw new Error('Choose the matching version tag');"
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+      - run: npm run build
+        id: package
+      - run: npm publish --dry-run --registry=https://registry.npmjs.org/ "$PACKAGE_ARCHIVE"
+        env:
+          PACKAGE_ARCHIVE: ${{ steps.package.outputs.archive }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-package
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+      - name: Publish verified archive
+        if: ${{ inputs.publish }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const p = JSON.parse(fs.readFileSync('package.json'));
+          const repository = process.env.GITHUB_REPOSITORY;
+          if (!repository) throw new Error('GitHub repository identity is required');
+          const expected = `https://github.com/${repository}.git`;
+          const url = typeof p.repository === 'string' ? p.repository : p.repository?.url;
+          if (url !== expected && url !== `git+${expected}`) {
+              throw new Error('Package repository metadata must match this repository exactly');
+          }
+          if (process.env.SOURCE_REPOSITORY_PRIVATE !== 'false') {
+              throw new Error('Public source is required before publishing with provenance');
+          }
+          NODE
+          npm publish --access public --provenance --registry=https://registry.npmjs.org/ "$PACKAGE_ARCHIVE"
+        env:
+          PACKAGE_ARCHIVE: ${{ steps.package.outputs.archive }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          SOURCE_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}

@@ -1,0 +1,589 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://fayegram.ai/decision-bridge-connectors/config-v3.schema.json",
+    "title": "Decision Bridge Connectors configuration",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schemaVersion",
+        "flows"
+    ],
+    "properties": {
+        "schemaVersion": {
+            "const": 3
+        },
+        "namespace": {
+            "$ref": "#/definitions/identifier"
+        },
+        "workerId": {
+            "$ref": "#/definitions/identifier"
+        },
+        "placements": {
+            "type": "array",
+            "items": {
+                "$ref": "#/definitions/identifier"
+            },
+            "uniqueItems": true
+        },
+        "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "maxPending": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "maxBytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 67108864
+                },
+                "evaluationConcurrency": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "deliveryConcurrency": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "optionalConcurrency": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "perDestination": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "leaseMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                },
+                "pageSize": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                },
+                "retentionMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "dedupeMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "maxTransfers": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                },
+                "transferIdleMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                },
+                "maxTransferBytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                }
+            }
+        },
+        "store": {
+            "$ref": "#/definitions/instance"
+        },
+        "extensions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "kind",
+                    "name",
+                    "module"
+                ],
+                "properties": {
+                    "kind": {
+                        "enum": [
+                            "incoming",
+                            "outgoing",
+                            "evaluator",
+                            "validator",
+                            "policy",
+                            "transform",
+                            "store"
+                        ]
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "module": {
+                        "type": "string"
+                    },
+                    "export": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "evaluators": {
+            "$ref": "#/definitions/registry"
+        },
+        "validators": {
+            "$ref": "#/definitions/registry"
+        },
+        "policies": {
+            "$ref": "#/definitions/registry"
+        },
+        "transforms": {
+            "$ref": "#/definitions/registry"
+        },
+        "connectors": {
+            "$ref": "#/definitions/registry"
+        },
+        "incoming": {
+            "type": "object",
+            "propertyNames": {
+                "$ref": "#/definitions/identifier"
+            },
+            "additionalProperties": {
+                "type": "object",
+                "required": [
+                    "type"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    },
+                    "options": {
+                        "type": "object"
+                    },
+                    "aggregation": {
+                        "type": "object",
+                        "required": [
+                            "rule",
+                            "correlationPath"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                            "rule": {
+                                "$ref": "#/definitions/identifier"
+                            },
+                            "member": {
+                                "$ref": "#/definitions/identifier"
+                            },
+                            "correlationPath": {
+                                "$ref": "#/definitions/path"
+                            },
+                            "eventIdPath": {
+                                "$ref": "#/definitions/path"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "aggregations": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "required": [
+                    "revision",
+                    "flow",
+                    "sources",
+                    "windowMs"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                    "revision": {
+                        "type": "string"
+                    },
+                    "flow": {
+                        "type": "string"
+                    },
+                    "sources": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "windowMs": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "dedupeMs": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "maxGroups": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "late": {
+                        "const": "reject"
+                    },
+                    "duplicate": {
+                        "enum": [
+                            "reject",
+                            "ignore",
+                            "replace"
+                        ]
+                    },
+                    "incomplete": {
+                        "enum": [
+                            "emit",
+                            "discard"
+                        ]
+                    }
+                }
+            }
+        },
+        "host": {
+            "type": "object"
+        },
+        "flows": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+                "$ref": "#/definitions/flow"
+            }
+        }
+    },
+    "definitions": {
+        "path": {
+            "type": "string",
+            "maxLength": 4096
+        },
+        "identifier": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "instance": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "options": {
+                    "type": "object"
+                }
+            }
+        },
+        "registry": {
+            "type": "object",
+            "additionalProperties": {
+                "$ref": "#/definitions/instance"
+            }
+        },
+        "flow": {
+            "type": "object",
+            "required": [
+                "revision"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "revision": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "operation": {
+                    "enum": [
+                        "decision",
+                        "extraction",
+                        "live"
+                    ]
+                },
+                "inputs": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                        "enum": [
+                            "request",
+                            "event",
+                            "result"
+                        ]
+                    }
+                },
+                "evaluator": {
+                    "type": "string"
+                },
+                "validator": {
+                    "type": "string"
+                },
+                "template": {},
+                "policies": {
+                    "type": "object",
+                    "maxProperties": 64,
+                    "additionalProperties": {
+                        "type": "object"
+                    }
+                },
+                "connections": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                        "$ref": "#/definitions/connection"
+                    }
+                },
+                "defaults": {
+                    "type": "object"
+                },
+                "locked": {
+                    "type": "object"
+                },
+                "overrides": {
+                    "type": "array",
+                    "items": {
+                        "enum": [
+                            "context",
+                            "correlationId",
+                            "causationId",
+                            "questionRevision",
+                            "deadlineAt"
+                        ]
+                    }
+                },
+                "timeoutMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                },
+                "deliveryTtlMs": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "maxAgeMs": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "stale": {
+                    "enum": [
+                        "hold",
+                        "expire"
+                    ]
+                },
+                "maxDepth": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "maxExecutions": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "concurrency": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "rate": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                }
+            }
+        },
+        "chainRetry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "delayMs",
+                "maxDelayMs"
+            ],
+            "anyOf": [
+                {
+                    "properties": {
+                        "maxAttempts": {}
+                    },
+                    "required": [
+                        "maxAttempts"
+                    ]
+                },
+                {
+                    "properties": {
+                        "timeoutMs": {}
+                    },
+                    "required": [
+                        "timeoutMs"
+                    ]
+                }
+            ],
+            "properties": {
+                "delayMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                },
+                "maxDelayMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                },
+                "timeoutMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                },
+                "maxAttempts": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                }
+            }
+        },
+        "connection": {
+            "type": "object",
+            "dependencies": {
+                "nextFlow": [
+                    "chainRetry"
+                ],
+                "chainRetry": [
+                    "nextFlow"
+                ]
+            },
+            "required": [
+                "id",
+                "connector",
+                "when",
+                "payload"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "connector": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "string"
+                },
+                "policy": {
+                    "type": "string"
+                },
+                "when": {
+                    "enum": [
+                        "evaluation.succeeded",
+                        "decision.accepted",
+                        "decision.review",
+                        "decision.abstained",
+                        "failure",
+                        "always"
+                    ]
+                },
+                "payload": {
+                    "enum": [
+                        "raw-result",
+                        "final-decision",
+                        "final-decision-with-result",
+                        "failure",
+                        "report"
+                    ]
+                },
+                "projection": {},
+                "transforms": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "encoding": {
+                    "enum": [
+                        "json",
+                        "text",
+                        "jsonl"
+                    ]
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "timeoutMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                },
+                "retry": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "maxAttempts": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100
+                        },
+                        "delayMs": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                        },
+                        "maxDelayMs": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                        },
+                        "ambiguous": {
+                            "enum": [
+                                "hold",
+                                "retry"
+                            ]
+                        }
+                    }
+                },
+                "ordering": {
+                    "type": "object"
+                },
+                "dependsOn": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                    }
+                },
+                "destination": {},
+                "placement": {
+                    "$ref": "#/definitions/identifier"
+                },
+                "outputSchema": {
+                    "anyOf": [
+                        {
+                            "type": "object"
+                        },
+                        {
+                            "type": "boolean"
+                        }
+                    ]
+                },
+                "nextFlow": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "chainRetry": {
+                    "$ref": "#/definitions/chainRetry"
+                },
+                "rate": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                }
+            }
+        }
+    }
+}

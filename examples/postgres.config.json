@@ -1,0 +1,14 @@
+{
+    "schemaVersion": 3,
+    "namespace": "review-service",
+    "store": { "type": "postgres", "options": { "connectionString": { "$env": "DATABASE_URL" } } },
+    "limits": { "evaluationConcurrency": 8, "deliveryConcurrency": 16, "optionalConcurrency": 4, "perDestination": 4 },
+    "extensions": [{ "kind": "evaluator", "name": "offline", "module": "./offline-extension.mjs" }],
+    "evaluators": { "offline": { "type": "offline" } },
+    "connectors": { "workflow": { "type": "http", "options": { "url": { "$env": "WORKFLOW_URL" } } } },
+    "flows": { "review": { "revision": "1", "inputs": ["request"], "evaluator": "offline",
+        "policies": { "action": { "revision": "1", "accept": { "question": "ready", "type": "noul", "min": 0.95 }, "otherwise": "review" } },
+        "connections": [{ "id": "workflow", "connector": "workflow", "policy": "action", "when": "decision.accepted", "payload": "final-decision-with-result" }]
+    } },
+    "incoming": { "api": { "type": "http", "options": { "host": "127.0.0.1", "port": 8787, "flow": "review", "reply": "admitted", "authToken": { "$env": "CONNECTOR_TOKEN" } } } }
+}

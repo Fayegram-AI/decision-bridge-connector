@@ -1,0 +1,1 @@
+{ "flow": "review", "kind": "result", "result": { "answers": { "ready": { "type": "noul", "noul": 0.98 } }, "meta": { "providerKind": "decision", "probabilitySource": "native" } }, "idempotencyKey": "example-result-1" }

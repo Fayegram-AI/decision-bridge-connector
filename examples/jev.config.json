@@ -1,0 +1,5 @@
+{
+    "schemaVersion": 3,
+    "evaluators": { "jev": { "type": "decision", "options": { "provider": { "type": "jev", "apiKey": { "$env": "JEV_API_KEY" } } } } },
+    "flows": { "evaluate": { "revision": "1", "inputs": ["request"], "evaluator": "jev", "connections": [] } }
+}

@@ -1,0 +1,126 @@
+{
+  "name": "@fayegram-ai/decision-bridge-connectors",
+  "version": "0.1.1",
+  "description": "Portable task execution, application policies and reliable integrations for Decision Bridge",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fayegram-AI/decision-bridge-connector.git"
+  },
+  "homepage": "https://github.com/Fayegram-AI/decision-bridge-connector#readme",
+  "bugs": {
+    "url": "https://github.com/Fayegram-AI/decision-bridge-connector/issues"
+  },
+  "engines": {
+    "node": ">=22.17.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.mts",
+      "import": "./src/index.mjs"
+    },
+    "./node": {
+      "types": "./src/node/index.d.mts",
+      "import": "./src/node/index.mjs"
+    },
+    "./sqlite": {
+      "types": "./src/storage/sqlite.d.mts",
+      "import": "./src/storage/sqlite.mjs"
+    },
+    "./postgres": {
+      "types": "./src/storage/postgres.d.mts",
+      "import": "./src/storage/postgres.mjs"
+    },
+    "./mcp": {
+      "types": "./src/integrations/mcp.d.mts",
+      "import": "./src/integrations/mcp-entry.mjs"
+    },
+    "./redis": {
+      "types": "./src/integrations/redis.d.mts",
+      "import": "./src/integrations/redis.mjs"
+    },
+    "./live": {
+      "types": "./src/integrations/live.d.mts",
+      "import": "./src/integrations/live.mjs"
+    },
+    "./testing": {
+      "types": "./src/testing.d.mts",
+      "import": "./src/testing.mjs"
+    },
+    "./config.schema.json": "./schemas/config.schema.json",
+    "./record.schema.json": "./schemas/record.schema.json"
+  },
+  "bin": {
+    "decision-bridge-connectors": "./bin/decision-bridge-connectors.mjs"
+  },
+  "files": [
+    "src",
+    "bin",
+    "schemas",
+    "examples/README.md",
+    "examples/custom-connector.mjs",
+    "examples/decision-task.json",
+    "examples/events.jsonl",
+    "examples/gemini.config.json",
+    "examples/gemini-task.json",
+    "examples/http.config.json",
+    "examples/jev.config.json",
+    "examples/mcp.config.json",
+    "examples/offline-extension.mjs",
+    "examples/offline.config.json",
+    "examples/postgres.config.json",
+    "examples/process-receiver.mjs",
+    "examples/recovery.mjs",
+    "examples/redis.config.json",
+    "examples/task.json",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "!**/.env",
+    "!**/.env.*"
+  ],
+  "scripts": {
+    "test": "node --test scripts/test.mjs",
+    "check": "node scripts/check.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:package": "node scripts/package-smoke.mjs",
+    "verify": "npm run check && npm test && npm run typecheck && npm run test:browser && npm run test:package",
+    "build": "node scripts/build.mjs",
+    "test:browser": "node --experimental-vm-modules scripts/browser-check.mjs",
+    "test:scale": "node scripts/qualify.mjs"
+  },
+  "dependencies": {
+    "@fayegram-ai/decision-bridge": "0.1.8",
+    "ajv": "8.20.0",
+    "es-module-lexer": "3.0.4"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "pg": "^8.16.3",
+    "redis": "^6.3.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "redis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@types/node": "22.15.30",
+    "pg": "8.16.3",
+    "redis": "6.3.0",
+    "typescript": "5.8.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

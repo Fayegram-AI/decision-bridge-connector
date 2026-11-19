@@ -1,0 +1,23 @@
+{
+    "schemaVersion": 3,
+    "evaluators": {
+        "gemini": {
+            "type": "decision",
+            "options": {
+                "provider": {
+                    "type": "gemini-decisions",
+                    "apiKey": { "$env": "DECISION_BRIDGE_GEMINI_API_KEY" }
+                }
+            }
+        }
+    },
+    "flows": {
+        "review": {
+            "revision": "1",
+            "inputs": ["request", "event", "result"],
+            "template": { "$path": "$" },
+            "evaluator": "gemini",
+            "connections": []
+        }
+    }
+}

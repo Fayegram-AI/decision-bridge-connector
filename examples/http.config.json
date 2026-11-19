@@ -1,0 +1,11 @@
+{
+    "schemaVersion": 3,
+    "placements": ["local"],
+    "store": { "type": "sqlite", "options": { "path": "./http.sqlite" } },
+    "validators": { "evidence": { "type": "schema", "options": { "schema": { "type": "object", "required": ["caseId"], "properties": { "caseId": { "type": "string" } } } } } },
+    "connectors": { "audit": { "type": "file", "options": { "directory": "./http-out" } } },
+    "flows": { "evidence": { "revision": "1", "inputs": ["result"], "validator": "evidence", "connections": [
+        { "id": "audit", "connector": "audit", "placement": "local", "when": "evaluation.succeeded", "payload": "raw-result" }
+    ] } },
+    "incoming": { "webhook": { "type": "http", "options": { "host": "127.0.0.1", "port": 8787, "flow": "evidence", "inputMode": "result", "reply": "admitted", "authToken": { "$env": "CONNECTOR_TOKEN" } } } }
+}

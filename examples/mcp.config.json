@@ -1,0 +1,7 @@
+{
+    "schemaVersion": 3,
+    "store": { "type": "sqlite", "options": { "path": "./mcp.sqlite" } },
+    "validators": { "evidence": { "type": "schema", "options": { "schema": { "type": "object" } } } },
+    "flows": { "evidence": { "revision": "1", "inputs": ["result"], "validator": "evidence" } },
+    "incoming": { "tools": { "type": "mcp", "options": { "transport": "stdio", "flows": ["evidence"] } } }
+}

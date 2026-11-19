@@ -1,0 +1,2 @@
+{"flow":"review","kind":"event","event":{"probability":0.8},"idempotencyKey":"event-1"}
+{"flow":"review","kind":"event","event":{"probability":0.98},"idempotencyKey":"event-2"}

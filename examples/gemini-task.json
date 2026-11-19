@@ -1,0 +1,10 @@
+{
+    "flow": "review",
+    "kind": "request",
+    "request": {
+        "state": "The replacement package arrived intact.",
+        "questions": {
+            "intact": { "type": "noul", "instructions": "Did the replacement arrive intact?" }
+        }
+    }
+}

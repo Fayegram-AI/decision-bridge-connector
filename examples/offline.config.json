@@ -1,0 +1,23 @@
+{
+    "schemaVersion": 3,
+    "placements": ["local"],
+    "store": { "type": "sqlite", "options": { "path": "./state.sqlite" } },
+    "extensions": [{ "kind": "evaluator", "name": "offline", "module": "./offline-extension.mjs" }],
+    "evaluators": { "offline": { "type": "offline" } },
+    "validators": { "native": { "type": "schema", "options": { "schema": { "type": "object", "required": ["answers", "meta"], "properties": { "answers": { "type": "object" }, "meta": { "type": "object" } } } } } },
+    "connectors": { "files": { "type": "file", "options": { "directory": "./out" } } },
+    "flows": {
+        "review": {
+            "revision": "1", "inputs": ["request", "event", "result"], "evaluator": "offline", "validator": "native", "template": { "$path": "$" },
+            "policies": {
+                "advisory": { "revision": "1", "accept": { "question": "ready", "type": "noul", "min": 0.7 }, "otherwise": "review" },
+                "action": { "revision": "1", "accept": { "question": "ready", "type": "noul", "min": 0.95 }, "otherwise": "review" }
+            },
+            "connections": [
+                { "id": "audit", "connector": "files", "placement": "local", "when": "evaluation.succeeded", "payload": "raw-result" },
+                { "id": "action", "connector": "files", "placement": "local", "policy": "action", "when": "decision.accepted", "payload": "final-decision" },
+                { "id": "review", "connector": "files", "placement": "local", "policy": "action", "when": "decision.review", "payload": "final-decision-with-result" }
+            ]
+        }
+    }
+}

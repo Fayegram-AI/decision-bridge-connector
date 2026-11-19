@@ -1,0 +1,10 @@
+{
+    "schemaVersion": 3,
+    "store": { "type": "sqlite", "options": { "path": "./redis.sqlite" } },
+    "validators": { "evidence": { "type": "schema", "options": { "schema": { "type": "object" } } } },
+    "connectors": { "output": { "type": "redis", "options": { "url": { "$env": "REDIS_URL" }, "stream": "decisions:output" } } },
+    "flows": { "evidence": { "revision": "1", "inputs": ["result"], "validator": "evidence", "connections": [
+        { "id": "output", "connector": "output", "when": "evaluation.succeeded", "payload": "raw-result" }
+    ] } },
+    "incoming": { "events": { "type": "redis", "options": { "url": { "$env": "REDIS_URL" }, "stream": "decisions:input", "group": "connectors", "flow": "evidence", "inputMode": "result" } } }
+}

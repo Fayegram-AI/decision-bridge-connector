@@ -1,0 +1,68 @@
+name: Verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['22.17.0', '24']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run verify
+  legacy-windows-spool:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.16.0'
+      - run: npm ci --ignore-scripts --engine-strict=false
+      - run: node --test test/spool-runtime.test.mjs
+  services:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: dbc
+          POSTGRES_PASSWORD: dbc-test
+          POSTGRES_DB: dbc
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U dbc"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7.2-alpine
+        ports: ['6379:6379']
+    env:
+      DBC_POSTGRES_URL: postgres://dbc:dbc-test@127.0.0.1:5432/dbc
+      DBC_REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run test:scale

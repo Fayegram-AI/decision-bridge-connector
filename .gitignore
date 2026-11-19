@@ -1,0 +1,17 @@
+node_modules/
+release/
+coverage/
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+!.env.example
+*.tgz
+.cli-test-*/
+.config-test-*/
+.package-check-*/
+decision-connectors-*/
+examples/output/
+examples/audit/
+examples/out/
+examples/http-out/
