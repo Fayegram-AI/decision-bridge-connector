@@ -6,7 +6,7 @@ import { createBridge, createProvider } from '@fayegram-ai/decision-bridge';
 import { createGenerativeProvider } from '@fayegram-ai/decision-bridge/custom/generative';
 import { createExtractionProvider } from '@fayegram-ai/decision-bridge/extraction';
 import { createDecisionRouter, createExtractionRouter } from '@fayegram-ai/decision-bridge/routing';
-import { decisionEvaluator, extractionEvaluator, routedDecisionEvaluator, routedExtractionEvaluator } from '../operations.mjs';
+import { decisionEvaluator, extractionEvaluator, inheritExtractionPreflight, routedDecisionEvaluator, routedExtractionEvaluator } from '../operations.mjs';
 import { abortError, assert, bounded, fingerprint, freeze, identifier, isRecord, keysOnly, runnerIdentity, snapshot, stableStringify, validateSignal } from '../util.mjs';
 import { readJson } from './io.mjs';
 import { createRegistry, extensionDefinition } from '../engine/registry.mjs';
@@ -182,7 +182,9 @@ export async function createConfiguredRunner(input, { baseDir = process.cwd(), e
             for (const key of ['name', 'capabilities', 'operation', 'provenance']) {
                 const value = instance[key]; if (value !== undefined) metadata[key] = freeze(snapshot(value));
             }
-            return Object.freeze({ ...instance, ...metadata, ...methods, revision });
+            const configured = Object.freeze({ ...instance, ...metadata, ...methods, revision });
+            if (kind === 'evaluator') inheritExtractionPreflight(instance, configured);
+            return configured;
         }
         const registrations = {};
         for (const [key, kind] of Object.entries({ evaluators: 'evaluator', validators: 'validator', policies: 'policy', transforms: 'transform', connectors: 'outgoing' })) {

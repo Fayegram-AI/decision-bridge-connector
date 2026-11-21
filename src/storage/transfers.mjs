@@ -1,8 +1,8 @@
 import { referenceNode } from './data-ref.mjs';
-import { assert, fingerprint, freeze, id, snapshot, stableStringify } from '../util.mjs';
+import { assert, fingerprint, freeze, id, isRecord, snapshot, stableStringify } from '../util.mjs';
 import { CHUNK_BYTES, digest } from './values.mjs';
 import { base64, unbase64 } from './inspection.mjs';
-import { EMPTY_HASH, FRAME_BYTES, chainHash, frameShape, hashPattern, portableMetadata, wireBytes } from './framing.mjs';
+import { EMPTY_HASH, FRAME_BYTES, chainHash, decodeTransferText, frameShape, hashPattern, portableMetadata, wireBytes } from './framing.mjs';
 
 const key = (...parts) => JSON.stringify(parts);
 const valueLimits = { json: 67108864, plan: 67108864, diagnostic: 65536 };
@@ -65,7 +65,9 @@ export function createTransfers(data, inspection, limits) {
                 pending.kind === 'record' ? 4194304 : pending.bytes) };
         });
         if (!work) return;
-        const text = new TextDecoder('utf-8', { fatal: true }).decode(work.bytes);
+        // Keep any leading BOM visible in a blob so canonical JSON is checked against its actual bytes.
+        const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: work.pending.kind === 'blob' });
+        const text = decodeTransferText(decoder, work.bytes);
         let value;
         try { value = JSON.parse(text); } catch { assert(false, 'Invalid transferred JSON value.', 'INVALID_TRANSFER'); }
         if (work.pending.kind === 'blob') {
@@ -74,7 +76,7 @@ export function createTransfers(data, inspection, limits) {
             assert(stableStringify(value) === text, 'Data is not canonical JSON.', 'INVALID_TRANSFER');
         } else {
             value = snapshot(value, { maxBytes: 4194304 });
-            assert(value.id === work.pending.recordId && typeof value.namespace === 'string' &&
+            assert(isRecord(value) && value.id === work.pending.recordId && typeof value.namespace === 'string' &&
                 (work.pending.entity !== 'task' || value.schemaVersion === 3 && typeof value.flow === 'string'), 'Invalid saved metadata.', 'INVALID_TRANSFER');
         }
         await raw.transaction(async tx => {
@@ -180,8 +182,8 @@ export function createTransfers(data, inspection, limits) {
             const metadata = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await gather(tx, namespace, transferId, 'incoming-record', source.rootId, 4194304)));
             const value = async wrapped => {
                 if (wrapped === undefined) return undefined;
+                assert(referenceNode(wrapped) && wrapped.$data.kind === 'json', 'Saved evidence requires an application data reference.', 'INVALID_TRANSFER');
                 const ref = wrapped.$data;
-                assert(ref && ref.kind === 'json', 'Saved evidence requires an application data reference.', 'INVALID_TRANSFER');
                 const expected = await tx.get('records', key(transferId, 'expected', ref.sha256));
                 assert(expected?.state === 'verified' && expected.bytes === ref.bytes, 'Saved evidence is unavailable.', 'INVALID_TRANSFER');
                 return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await gather(tx, namespace, transferId, 'incoming-blob', ref.sha256, expected.bytes)));

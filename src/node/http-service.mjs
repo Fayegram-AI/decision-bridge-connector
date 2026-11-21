@@ -111,7 +111,8 @@ export function createHttpHandler(options = {}) {
                         for await (const bytes of runner.exportTask(taskId, { signal })) await writeStream(response, bytes, signal);
                         await writeStream(response, '', signal, { end: true });
                     } else {
-                        const value = await runner.importTask(request, { flow, signal });
+                        // Early input rejection must leave the socket available for the error response.
+                        const value = await runner.importTask(request.iterator({ destroyOnReturn: false }), { flow, signal });
                         response.statusCode = 202;
                         await writeStream(response, JSON.stringify({ ok: true, value }), signal, { end: true });
                     }
@@ -124,7 +125,11 @@ export function createHttpHandler(options = {}) {
             else {
                 assert(request.method === 'POST', 'Method not supported.', 'NOT_FOUND');
                 let bytes = 0; const chunks = [];
-                for await (const chunk of request) { bytes += chunk.length; assert(bytes <= maxBytes, 'Request exceeds its byte limit.', 'RESOURCE_LIMIT'); chunks.push(chunk); }
+                for await (const chunk of request.iterator({ destroyOnReturn: false })) {
+                    bytes += chunk.length;
+                    assert(bytes <= maxBytes, 'Request exceeds its byte limit.', 'RESOURCE_LIMIT');
+                    chunks.push(chunk);
+                }
                 let body;
                 try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))); }
                 catch { assert(false, 'Request must contain valid JSON.', 'INVALID_JSON'); }
@@ -168,6 +173,8 @@ export function createHttpHandler(options = {}) {
             if (lifetime.signal.aborted) { response.destroy(); return; }
             if (response.headersSent || response.writableEnded || response.destroyed) { response.destroy(); return; }
             const failure = publicError(error);
+            response.setHeader('content-type', 'application/json');
+            if (request.complete === false) response.setHeader('connection', 'close');
             response.statusCode = errorStatus.get(failure.code) ?? 400;
             try {
                 await bounded(signal => writeStream(response, JSON.stringify({ ok: false, error: failure }), signal, { end: true }),

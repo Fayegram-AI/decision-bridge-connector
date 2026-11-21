@@ -23,7 +23,7 @@ persistent stores where later commands/workers need saved state; see [storage](.
 | `postgres.config.json` | Optional pg peer, `DATABASE_URL`, `WORKFLOW_URL`, `CONNECTOR_TOKEN`; start one ingress role and multiple worker roles against the same configuration. |
 | `custom-connector.mjs` | Register as an outgoing extension with `options.url`; wraps evidence in a workflow envelope. |
 | `process-receiver.mjs` | Configure a process connector with the Node executable, this script's absolute path in `args`, and a local placement label. |
-| `recovery.mjs` | Pass the configuration for an existing store to recover expired leases, then print queue counts and active tasks. Unknown outcomes remain held for reconciliation. |
+| `recovery.mjs` | Run `node connector-examples/recovery.mjs PATH` with the configuration for your store. It recovers expired leases and lists up to 25 active tasks. See [state and recovery](../docs/ARCHITECTURE.md#state-and-recovery) for unknown outcomes. |
 
 The offline evaluator is a deterministic fixture for integration learning. Replace it with a
 registered real evaluator before interpreting its output as model evidence. Structural schema

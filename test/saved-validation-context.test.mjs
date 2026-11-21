@@ -8,6 +8,45 @@ import { createPostgresStore } from '../src/storage/postgres.mjs';
 const stores = [['memory', () => createMemoryStore()], ['sqlite', () => createSQLiteStore(':memory:')],
     ...(process.env.DBC_POSTGRES_URL ? [['postgres', () => createPostgresStore({ connectionString: process.env.DBC_POSTGRES_URL })]] : [])];
 
+test('saved evaluation uses a normalized null request on replay, and caller context only when there was no evaluation', async () => {
+    const received = [];
+    const evaluator = { revision: '1', validate: () => null, execute: () => 42,
+        validateSaved(value, request) { received.push(request); return value; } };
+    const runner = createRunner({ evaluators: { e: evaluator }, flows: { a: { revision: '1', inputs: ['request', 'result'], evaluator: 'e' } } });
+    try {
+        const validation = { request: 'caller context' };
+        const original = await runner.run({ flow: 'a', kind: 'request', request: 'before normalization', validation });
+        await runner.reprocess(original.taskId);
+        await runner.redeliver(original.taskId, { flow: 'a' });
+        await runner.importTask(runner.exportTask(original.taskId), { flow: 'a' });
+        await runner.submit({ flow: 'a', kind: 'result', result: 42, validation });
+        await runner.submit({ flow: 'a', kind: 'result', result: 42, validation: null });
+        await runner.submit({ flow: 'a', kind: 'result', result: 42, validation: { request: null } });
+        assert.deepEqual(received, [null, null, null, 'caller context', undefined, null]);
+    } finally { await runner.close(); }
+});
+
+test('saved-result callbacks can edit a private request copy without changing retained evidence', async () => {
+    const request = { profile: { model: 'original-selector' } };
+    const normalize = (result, saved) => { saved.profile.model = 'canonical'; return result; };
+    const runner = createRunner({ evaluators: { e: { revision: '1', execute: () => 42, validateSaved: normalize } },
+        validators: { v: { revision: '1', validate: (value, { validation }) => normalize(value, validation.request) } },
+        flows: { a: { revision: '1', inputs: ['request', 'result'], evaluator: 'e' },
+            historical: { revision: '1', inputs: ['result'], validator: 'v' } } });
+    try {
+        const original = await runner.run({ flow: 'a', kind: 'request', request });
+        for (const flow of ['a', 'historical']) {
+            const direct = await runner.run({ flow, kind: 'result', result: 42, validation: { request } });
+            assert.deepEqual((await runner.store.get(direct.taskId, runner.namespace)).task.input.validation.request, request);
+            const replay = await runner.reprocess(original.taskId, { flow });
+            const imported = await runner.importTask(runner.exportTask(replay.taskId), { flow });
+            for (const derived of [replay, imported]) {
+                assert.deepEqual((await runner.store.get(derived.taskId, runner.namespace)).task.request, request);
+            }
+        }
+    } finally { await runner.close(); }
+});
+
 for (const [name, factory] of stores) test(`${name}: recovered evaluation retains metadata and binds the evaluated request`, async () => {
     const store = await factory(); let evaluations = 0; let validations = 0;
     const request = { model: 'normalized' };
@@ -31,7 +70,7 @@ for (const [name, factory] of stores) test(`${name}: recovered evaluation retain
 for (const [name, factory] of stores) test(`${name}: saved-result operations retain complete validation context`, { timeout: 30000 }, async () => {
     const store = await factory();
     try {
-        for (const context of [{ request: { model: 'original' }, attestation: { source: 'verified' } }, 'opaque-validation-tag', undefined]) {
+        for (const context of [{ request: { model: 'original' }, attestation: { source: 'verified' } }, 'opaque-validation-tag', null, undefined]) {
             let sends = 0; let validated = 0;
             const runner = createRunner({ store, namespace: `saved-context-${crypto.randomUUID()}`,
                 validators: { v: { revision: '1', validate(value, { validation }) {

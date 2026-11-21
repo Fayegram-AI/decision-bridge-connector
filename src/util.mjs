@@ -204,12 +204,23 @@ export function deliveryPreflight(operation) {
   }
 }
 
+// Keep Core's public diagnostics and error type when adding a local admission disposition.
+class OversizedCoreInput extends DecisionError {
+  inputInvalid = true;
+  ambiguous = false;
+  toJSON() { return { ...super.toJSON(), inputInvalid: true, ambiguous: false }; }
+}
+
 /** Only known validation failures at the admission boundary classify poison input. */
 export function invalidInput(error) {
   const failure = publicError(error);
+  if (failure.retryable === true || failure.ambiguous === true) return error;
+  // Core checks its wire and attachment limits locally. A provider may also return this code after I/O.
+  if (failure.code === 'REQUEST_TOO_LARGE' && error instanceof DecisionError && failure.status === undefined &&
+    failure.attempts === undefined && (failure.source === 'client' || failure.source === undefined))
+    return new OversizedCoreInput(failure.message, { ...failure, retryable: false });
   if (['VALIDATION_ERROR', 'CONFIGURATION_ERROR', 'RESOURCE_LIMIT', 'MAPPING_MISSING_PATH', 'UNSUPPORTED_CAPABILITY',
-    'INVALID_RESULT', 'INVALID_SAVED_OUTPUT', 'INVALID_SAVED_RESULT', 'INVALID_RESPONSE'].includes(failure.code) &&
-    failure.retryable !== true && failure.ambiguous !== true)
+    'INVALID_RESULT', 'INVALID_SAVED_OUTPUT', 'INVALID_SAVED_RESULT', 'INVALID_RESPONSE'].includes(failure.code))
     return new ConnectorError(failure.code, failure.message, { ...failure, inputInvalid: true, retryable: false, ambiguous: false });
   return error;
 }

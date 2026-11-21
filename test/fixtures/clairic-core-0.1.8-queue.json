@@ -1,0 +1,220 @@
+{
+    "config": {
+        "schemaVersion": 3,
+        "evaluators": {
+            "cf": {
+                "type": "extraction",
+                "options": {
+                    "provider": {
+                        "type": "cloudflare-extraction"
+                    }
+                }
+            }
+        },
+        "flows": {
+            "extract": {
+                "revision": "1",
+                "operation": "extraction",
+                "inputs": [
+                    "request",
+                    "result"
+                ],
+                "evaluator": "cf"
+            }
+        }
+    },
+    "records": [
+        {
+            "task": {
+                "id": "task_f1bd2f99-8f35-4ea1-83f5-7c2e704644fc",
+                "schemaVersion": 3,
+                "namespace": "default",
+                "source": "sdk",
+                "flow": "extract",
+                "flowRevision": "1",
+                "state": "active",
+                "createdAt": 1735689600000,
+                "updatedAt": 1735689600000,
+                "input": {
+                    "flow": "extract",
+                    "kind": "request",
+                    "request": {
+                        "model": "@cf/cloudflare/clairic",
+                        "state": "Ada",
+                        "fields": {
+                            "name": {
+                                "type": "text"
+                            }
+                        }
+                    },
+                    "source": "sdk",
+                    "namespace": "default"
+                },
+                "plan": {
+                    "revision": "1",
+                    "operation": "extraction",
+                    "inputs": [
+                        "request",
+                        "result"
+                    ],
+                    "evaluator": "cf",
+                    "policies": {},
+                    "defaults": {},
+                    "locked": {},
+                    "overrides": [],
+                    "timeoutMs": 60000,
+                    "deliveryTtlMs": 3600000,
+                    "maxDepth": 8,
+                    "maxExecutions": 64,
+                    "concurrency": 4,
+                    "stale": "hold",
+                    "connections": [],
+                    "evaluatorRevision": "ff384b3dda0f3dd32860085133787581670e1f4a0423afe949ffdf5fb4dc67cf",
+                    "validatorRevision": "ff384b3dda0f3dd32860085133787581670e1f4a0423afe949ffdf5fb4dc67cf",
+                    "transformRevisions": {},
+                    "id": "extract",
+                    "runtimeRevision": "badcd8aa4497b889d19989a0f2b3089417a2999b873a44bfd7c92fcfce3bc1c3"
+                },
+                "evaluationId": "evaluation_81917c02-7837-4f70-bb9c-916f6a070740",
+                "policyOnly": false,
+                "policies": {},
+                "errors": [],
+                "evidenceAt": "2025-01-01T00:00:00.000Z",
+                "lineage": {
+                    "rootId": "task_f1bd2f99-8f35-4ea1-83f5-7c2e704644fc",
+                    "depth": 0,
+                    "path": [],
+                    "parentId": null,
+                    "maxDepth": 8,
+                    "maxExecutions": 64
+                },
+                "fingerprint": "91e9e3f6d869a2a7c2642860da46e807a1ec2a2b3c7eb708f0c26ea01090d50b",
+                "rootId": "task_f1bd2f99-8f35-4ea1-83f5-7c2e704644fc",
+                "request": {
+                    "model": "@cf/cloudflare/clairic",
+                    "state": "Ada",
+                    "fields": {
+                        "name": {
+                            "type": "text"
+                        }
+                    }
+                }
+            },
+            "jobs": [
+                {
+                    "namespace": "default",
+                    "taskId": "task_f1bd2f99-8f35-4ea1-83f5-7c2e704644fc",
+                    "flow": "extract",
+                    "revision": "badcd8aa4497b889d19989a0f2b3089417a2999b873a44bfd7c92fcfce3bc1c3",
+                    "createdAt": 1735689600000,
+                    "runAt": 1735689600000,
+                    "priority": 0,
+                    "required": 1,
+                    "leaseUntil": null,
+                    "token": null,
+                    "id": "task_f1bd2f99-8f35-4ea1-83f5-7c2e704644fc:evaluation",
+                    "kind": "evaluation",
+                    "state": "pending",
+                    "stage": "prepared",
+                    "attempts": []
+                }
+            ]
+        },
+        {
+            "task": {
+                "id": "task_25adb9d7-8dcd-44d0-a5f4-6fa9159d9677",
+                "schemaVersion": 3,
+                "namespace": "default",
+                "source": "sdk",
+                "flow": "extract",
+                "flowRevision": "1",
+                "state": "active",
+                "createdAt": 1735689600000,
+                "updatedAt": 1735689600000,
+                "input": {
+                    "flow": "extract",
+                    "kind": "request",
+                    "request": {
+                        "model": "@cf/cloudflare/clairic",
+                        "state": "Ada",
+                        "fields": {
+                            "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+                                "type": "text"
+                            }
+                        }
+                    },
+                    "source": "sdk",
+                    "namespace": "default"
+                },
+                "plan": {
+                    "revision": "1",
+                    "operation": "extraction",
+                    "inputs": [
+                        "request",
+                        "result"
+                    ],
+                    "evaluator": "cf",
+                    "policies": {},
+                    "defaults": {},
+                    "locked": {},
+                    "overrides": [],
+                    "timeoutMs": 60000,
+                    "deliveryTtlMs": 3600000,
+                    "maxDepth": 8,
+                    "maxExecutions": 64,
+                    "concurrency": 4,
+                    "stale": "hold",
+                    "connections": [],
+                    "evaluatorRevision": "ff384b3dda0f3dd32860085133787581670e1f4a0423afe949ffdf5fb4dc67cf",
+                    "validatorRevision": "ff384b3dda0f3dd32860085133787581670e1f4a0423afe949ffdf5fb4dc67cf",
+                    "transformRevisions": {},
+                    "id": "extract",
+                    "runtimeRevision": "badcd8aa4497b889d19989a0f2b3089417a2999b873a44bfd7c92fcfce3bc1c3"
+                },
+                "evaluationId": "evaluation_8320ef36-989d-47d8-9b57-d9876de6aeaf",
+                "policyOnly": false,
+                "policies": {},
+                "errors": [],
+                "evidenceAt": "2025-01-01T00:00:00.000Z",
+                "lineage": {
+                    "rootId": "task_25adb9d7-8dcd-44d0-a5f4-6fa9159d9677",
+                    "depth": 0,
+                    "path": [],
+                    "parentId": null,
+                    "maxDepth": 8,
+                    "maxExecutions": 64
+                },
+                "fingerprint": "4145d4ef28af7ac395225802c8048e2d6bff02c90ef2cf9db84f89b8fd4e8875",
+                "rootId": "task_25adb9d7-8dcd-44d0-a5f4-6fa9159d9677",
+                "request": {
+                    "model": "@cf/cloudflare/clairic",
+                    "state": "Ada",
+                    "fields": {
+                        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+                            "type": "text"
+                        }
+                    }
+                }
+            },
+            "jobs": [
+                {
+                    "namespace": "default",
+                    "taskId": "task_25adb9d7-8dcd-44d0-a5f4-6fa9159d9677",
+                    "flow": "extract",
+                    "revision": "badcd8aa4497b889d19989a0f2b3089417a2999b873a44bfd7c92fcfce3bc1c3",
+                    "createdAt": 1735689600000,
+                    "runAt": 1735689600000,
+                    "priority": 0,
+                    "required": 1,
+                    "leaseUntil": null,
+                    "token": null,
+                    "id": "task_25adb9d7-8dcd-44d0-a5f4-6fa9159d9677:evaluation",
+                    "kind": "evaluation",
+                    "state": "pending",
+                    "stage": "prepared",
+                    "attempts": []
+                }
+            ]
+        }
+    ]
+}

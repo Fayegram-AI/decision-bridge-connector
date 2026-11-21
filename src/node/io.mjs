@@ -38,14 +38,14 @@ export async function readJson(path, { stdin = process.stdin, maxBytes = 16 * 10
   validateSignal(signal); byteLimit(maxBytes); cancelled(signal);
   const input = path === '-' ? stdin : createReadStream(path);
   const iterator = input[Symbol.asyncIterator]();
-  const chunks = []; let bytes = 0;
+  const chunks = []; let bytes = 0; let ended = false;
   const cancel = () => input.destroy?.();
   signal?.addEventListener('abort', cancel, { once: true });
   try {
     while (true) {
       cancelled(signal);
       const { done, value } = await withAbort(Promise.resolve().then(() => iterator.next()), signal);
-      if (done) break;
+      if (done) { ended = true; break; }
       const data = Buffer.from(value); bytes += data.length;
       assert(bytes <= maxBytes, 'JSON input exceeds its byte limit.', 'INPUT_TOO_LARGE'); chunks.push(data);
     }
@@ -56,7 +56,7 @@ export async function readJson(path, { stdin = process.stdin, maxBytes = 16 * 10
   finally {
     signal?.removeEventListener('abort', cancel);
     if (path !== '-' || signal?.aborted) input.destroy?.();
-    releaseIterator(iterator);
+    if (!ended) releaseIterator(iterator);
   }
 }
 
@@ -131,7 +131,7 @@ export async function* jsonLines(input, { maxBytes = 16 * 1024 * 1024, signal, r
   finally {
     signal?.removeEventListener('abort', cancel);
     if (!ended || signal?.aborted) input.destroy?.();
-    releaseIterator(iterator);
+    if (!ended) releaseIterator(iterator);
   }
 }
 
@@ -171,7 +171,7 @@ export async function* orderedMap(source, transform, concurrency = 4, { signal }
   } finally {
     // All transform/read promises are observed. A caller stopping consumption owns
     // cancellation of its in-flight tasks; we do not await uncooperative callbacks.
-    releaseIterator(iterator);
+    if (!ended) releaseIterator(iterator);
   }
 }
 

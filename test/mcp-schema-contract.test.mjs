@@ -14,6 +14,11 @@ test('MCP advertised schemas represent actual operation options and JSON validat
     assert.equal(check('run')({ input: { flow: 'a', kind: 'result', request: 1 } }), false);
     assert.equal(check('run')({ input: { flow: 'a', kind: 'result', result: 1, request: 1 } }), false);
     assert.equal(check('reprocess')({ taskId: 'task', options: { waitMs: 1000 } }), false);
+    const resolve = resolution => check('resolveEvaluation')({ taskId: 'task', resolution });
+    assert(resolve({ status: 'succeeded', reason: 'Recovered response', result: null }));
+    assert(resolve({ status: 'failed', reason: 'Confirmed rejection' }));
+    assert.equal(resolve({ status: 'succeeded', reason: 'Missing response' }), false);
+    assert.equal(resolve({ status: 'failed', reason: '   ' }), false);
     for (const action of ['redeliver', 'openImport']) {
         const base = action === 'redeliver' ? { taskId: 'task' } : {};
         assert.equal(check(action)(base), false); assert.equal(check(action)({ ...base, options: {} }), false);

@@ -1,6 +1,6 @@
 {
   "name": "@fayegram-ai/decision-bridge-connectors",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Portable task execution, application policies and reliable integrations for Decision Bridge",
   "type": "module",
   "license": "MIT",
@@ -92,7 +92,7 @@
     "test:scale": "node scripts/qualify.mjs"
   },
   "dependencies": {
-    "@fayegram-ai/decision-bridge": "0.1.8",
+    "@fayegram-ai/decision-bridge": "0.1.9",
     "ajv": "8.20.0",
     "es-module-lexer": "3.0.4"
   },

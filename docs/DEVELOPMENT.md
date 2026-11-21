@@ -7,11 +7,12 @@ The checkout includes the tests and development scripts.
 
 `npm run build` runs `npm pack` into `release/` and verifies that archive in an installed
 consumer. The archive contains JavaScript modules and TypeScript declarations from `src/`,
-the CLI entry point, JSON schemas, examples, and documentation. npm installs Decision Bridge 0.1.8, AJV and
-`es-module-lexer` as dependencies.
+the CLI entry point, JSON schemas, examples, and documentation. npm installs the Decision
+Bridge version pinned in the [manifest](../package.json), AJV and `es-module-lexer`.
 
 Use `npm run test:package` to check the current checkout in a temporary directory.
-Use `npm run test:package -- --tarball PATH` to check a specific archive.
+Use `npm run test:package -- --tarball PATH` to check an archive for this checkout's
+package name and version.
 
 ## Verification commands
 
@@ -42,8 +43,10 @@ A separate job runs the functional tests with PostgreSQL and Redis and the worke
 with SQLite and PostgreSQL.
 
 The package-consumer check verifies the file inventory, installs into a temporary application
-without optional peers, imports every public JavaScript entry point, and exercises CLI examples. It also
-checks that repacking after example execution excludes generated databases and outputs.
+without optional peers, imports every public JavaScript entry point, and exercises CLI examples.
+It tests Cloudflare extraction with a saved queue and a schema-3 archive. After running
+the examples, it repacks the installation to check that generated databases and outputs
+stay out of the package.
 Dependency installation prefers the npm cache and fetches missing metadata or packages from
 the registry. With the production dependencies and metadata cached, use
 `npm run test:package -- --offline` or `npm run build -- --offline` to require offline

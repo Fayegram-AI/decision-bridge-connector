@@ -76,27 +76,39 @@ npx decision-bridge-connectors list --config config.json --options page.json
 npx decision-bridge-connectors inspect --config config.json
 ```
 
-Omit `--input` or use `-` for stdin. `batch` processes bounded JSONL records sequentially in
-input order. Each line reports success or error, including oversized or invalid UTF-8 records.
+Omit `--input` or use `-` for stdin. `batch` processes JSONL records sequentially in input
+order and returns one JSON record per input line. `{ "line": 1, "ok": true, "value": ... }`
+carries the selected reply. With the default report reply, inspect `value.status` for the
+execution outcome. A failed execution can still produce a report with `ok: true`. Line errors,
+including oversized records, blank lines, and invalid UTF-8, use `ok: false` and an `error` object.
 Single JSON input and each JSONL record have a 1 MiB wire limit, independent of the store's
 `limits.maxBytes`. Raising the store limit does not raise the CLI input limit. Streaming
 `import` uses the separate [transfer limits](DATA.md#limits-and-storage).
-Stdout is JSON/JSONL except help/version;
-diagnostics use stderr. Exit code 0 indicates success, including a policy review or abstention.
+Stdout carries JSON for single commands, JSONL for batch results, and NDJSON frames for
+exports. Help and version print text. Diagnostics use stderr. Exit code 0 indicates
+command success, including a policy review or abstention. An execution report with
+`status: 'running'` can also exit 0. Scripts that need a business outcome should
+read the report.
 The CLI returns 1 for a failed, partial, unknown, or cancelled execution, a runtime or
-integration failure, or a batch with a failed record. It returns 2 for invalid arguments,
-single-input validation errors, or invalid configuration, and 130 when interrupted by a signal.
+integration failure, or a batch containing a line error or one of those execution outcomes.
+It returns 2 for invalid arguments, single-input validation errors, or invalid configuration,
+and 130 when interrupted by a signal.
 Reply modes and final-policy names are checked before execution operations admit or change work.
 Cancellation interrupts blocked stdout writes, and diagnostic write failures cannot prevent cleanup.
 Interruption also cancels validation for preview, derived admissions and evaluation reconciliation
 before their durable changes begin. Already-started database transactions may finish.
 
-`--reply report|raw|final` selects caller output; `final` requires `--policy NAME`. This does not
-change configured outgoing connections. `--wait admitted|evaluated|required|settled` and
-`--wait-ms` set caller waiting. `submit` admits without executing; use durable storage and a
-service/worker sharing that store and namespace for later processing.
-A one-shot command drains work it has started when closing; use service hosting for independent
-long-lived optional delivery.
+`--reply report|raw|final` selects caller output independently of outgoing connections.
+`final` requires `--policy NAME`. Raw and final output return JSON `null` when the selected
+value is absent. The report exposes `evaluation.hasResult` to distinguish a saved JSON
+`null` result from a missing result.
+
+`run` and `batch` default to `--wait required --wait-ms 60000`. The wait can return the
+last observed report when the budget expires. See [wait milestones](ARCHITECTURE.md#independence-and-scheduling).
+`submit` and `run --wait admitted` return after admission. Use a persistent store and
+a worker sharing that store and namespace to process the task after the CLI exits.
+A one-shot command drains work it has already started during shutdown. Use service
+hosting to keep processing queued deliveries independently of the command.
 
 Administrative commands are `retry DELIVERY_ID`, `resolve DELIVERY_ID`, `completion DELIVERY_ID`,
 `cancel TASK_ID`, `reprocess TASK_ID`, `redeliver TASK_ID --flow NAME`, `reevaluate TASK_ID`,
@@ -106,11 +118,16 @@ reads `{ "status": "completed" }` or `{ "status": "failed" }`. `--options FILE` 
 options such as a list cursor/limit or destination pause settings. Keep unknown outcomes held
 until receipt evidence supports resolution.
 
-`resolve-evaluation TASK_ID` reads `{ "status": "failed", "reason": "operator evidence" }` or
-`{ "status": "succeeded", "reason": "recovered provider response", "result": ... }`.
-A recovered result must pass the original flow's result validator; it resumes policy/output
-planning without inference. Both resolutions retain an audit reason. Use this operation to
-settle ambiguous evaluations after checking provider evidence.
+`resolve-evaluation TASK_ID` settles an `unknown` evaluation after you check the provider's
+outcome. Supply a nonblank reason and the recovered result, for example
+`{ "status": "succeeded", "reason": "Provider confirmed an empty result", "result": null }`.
+The result must pass the original validator. For a confirmed failure, supply
+`{ "status": "failed", "reason": "Provider confirmed rejection" }`. The next worker
+resumes planning. See [state and recovery](ARCHITECTURE.md#state-and-recovery).
+
+`import --flow NAME --input FILE` checks the destination flow and transfer capacity before
+opening the file. An invalid destination exits with code 2. An unreadable archive file exits
+with code 1. Use `--input -` to read the archive from stdin.
 
 ## Persistent hosts
 
@@ -121,6 +138,11 @@ durable admission; a failed acknowledgement cannot erase an admitted task. Worke
 expired leases, flush aggregation windows, and maintain retention.
 Maintenance operations report failures independently: a failed aggregation rule cannot prevent
 other rules from flushing or prevent retention maintenance from running.
+
+Keep all ingress and worker hosts that share a namespace on the same Connector release.
+For a package upgrade, stop intake, shut down the hosts, start hosts with the updated
+package, then resume intake. See [runtime revisions](ARCHITECTURE.md#identity-and-authority)
+for queued work across configuration changes.
 
 `host.health()` reports readiness, bounded recent errors, queue counts, and age. Shutdown first
 stops ingress, then drains workers within `drainMs`; noncooperative sources are bounded. Ownership
@@ -164,7 +186,8 @@ after attempting the remaining cleanup. SDK errors retain aggregate causes; host
 receives sanitized diagnostics. The CLI returns operational failure code 1 if cleanup fails
 after an otherwise successful operation, preserving earlier failure or interruption codes.
 
-`createService(config, options)` adds programmatic `reload(newConfig)`. Service hosts use `config.host`
+`createService(config, options)` adds programmatic configuration reload through
+`reload(newConfig)`. Service hosts use `config.host`
 settings, with explicit service options taking precedence, on both startup and reload. Reload
 validates the new configuration, host bounds, listener options and source bindings before
 stopping current ingress. It resolves HTTP and MCP listener names before cutover and checks the
@@ -201,7 +224,14 @@ through their application's chosen authenticated control interface.
 
 ## HTTP
 
-An incoming `http` connection binds `flow`, optional `inputMode`, and `reply: 'admitted'|'complete'`.
+An incoming `http` connection binds a `flow`. By default, `inputMode: 'submission'` expects a
+submission envelope with `kind` and its matching field, such as `{"kind":"result","result":42}`.
+Omit `flow` in the envelope or use the configured name. Set `inputMode` to `request`, `event`, or
+`result` to send the corresponding value directly as the body.
+
+`reply` defaults to `admitted` and requires a durable store. `reply: 'complete'` uses the SDK's
+default `run` wait.
+
 Listeners default to loopback. Non-loopback listeners require authentication. Use `authToken`
 or an SDK `authorize` callback and terminate TLS at an application-owned proxy when needed.
 For SDK servers returned by `createHttpServer`, an omitted TCP host uses the configured host
@@ -223,18 +253,27 @@ the application proxy when needed; forwarded host headers do not grant access.
 | `GET /tasks/:id` | Read an execution in the endpoint's flow. |
 | `GET /tasks/:id/export` | Stream a consistent NDJSON execution archive. |
 | `POST /tasks/import` | Administratively import an NDJSON archive into the endpoint flow. |
-| `GET /health` | Read store counts and queue age. |
+| `GET /health` | Read the runner's store counts and queue age. For host readiness, use `host.health()` in the SDK. |
 | `POST /operations/:action` | Invoke the shared service operation with named arguments. |
 
-Snapshot/session inspection and streaming transfer contracts are described in [data access](DATA.md).
+Successful JSON responses use `{ "ok": true, "value": ... }`. For `reply: 'complete'`,
+the HTTP 200 response places the execution report in `value`. Read `value.status` to determine
+the outcome, including a task still running after the wait budget. Errors returned as JSON use
+`{ "ok": false, "error": ... }`. A successful archive export streams `application/x-ndjson`.
+
+An `INVALID_TRANSFER` error returns HTTP 400. Exceeding a transfer quota returns HTTP 429.
+If a writable connection is still uploading when the server rejects input, the client can
+receive the JSON error before it finishes sending. Once export frames have started, a
+stream failure closes the connection. See [streaming transfer](DATA.md#framed-export-and-import).
 
 Administration is disabled unless `allowAdmin` is explicitly enabled. Flow restrictions apply
 to task reads, destination flows, listing, flow pause and delivery administration. Delivery
 operations authorize the parent named by `deliveryId`; a separate `taskId` cannot change that scope.
-The same resource checks apply to MCP tools. HTTP request bodies default
-to 1 MiB. Socket write completion records caller reply as submitted, not proof that the caller
-processed the response. Disconnected replies do not retry inference or outgoing delivery.
-Bodies must contain valid UTF-8 JSON; malformed encoding is rejected before admission.
+The same resource checks apply to MCP tools. Ordinary HTTP JSON bodies must be valid UTF-8 and
+fit within `maxBytes` (1 MiB by default, configurable up to 64 MiB). An oversized JSON body
+returns HTTP 429 with `RESOURCE_LIMIT`. Archive uploads use the transfer quotas described above.
+Socket write completion records the caller reply as submitted. Disconnected replies do not
+retry inference or outgoing delivery.
 HTTP and MCP forward host/request cancellation through admission, preview, derived admissions
 and evaluation-recovery validation. Run operations also use it for caller waits.
 Cancellation while validation is running prevents admission; cancelling a wait preserves an

@@ -3,7 +3,7 @@ import { storeLimits } from './limits.mjs';
 import { deliveryDisposition, unconfirmedAcceptance } from '../engine/freshness.mjs';
 import { admissionKey, admissionPending } from './admission-retention.mjs';
 import { acceptedDisposition, validateReceipt } from '../engine/receipts.mjs';
-import { captureDeliveryResolution } from '../engine/input-capture.mjs';
+import { captureDeliveryResolution, captureEvaluationResolution } from '../engine/input-capture.mjs';
 import { createValueStorage } from './values.mjs';
 import { encodeRecord } from './record-codec.mjs';
 import { createInspection } from './inspection.mjs';
@@ -443,7 +443,8 @@ export function createExecutionStore(repository, options = {}) {
                 await settle(tx, taskId);
             });
         },
-        async resolveEvaluation(namespace, taskId, resolution) {
+        async resolveEvaluation(namespace, taskId, input) {
+            const resolution = captureEvaluationResolution(input, limits.maxBytes);
             // Prepare recovered values before acquiring job/task locks. A changed
             // diagnostic history is retried explicitly rather than overwritten.
             const before = await repository.transaction(async tx => {

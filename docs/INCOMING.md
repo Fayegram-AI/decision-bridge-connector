@@ -1,9 +1,10 @@
 # Incoming connections
 
-Each incoming source binds a named flow. `inputMode` is `submission`, `request`, `event`, or
-`result`; wrappers apply the same admission checks as SDK calls. A supplied flow cannot override
-the source binding. Multiple sources and destinations can share the same process or use separate
-ingress and worker hosts backed by PostgreSQL.
+HTTP, file, stdin, process, spool, and Redis sources each bind a named flow. MCP can expose
+several permitted flows. Where supported, `inputMode` selects `submission`, `request`,
+`event`, or `result`. The binding controls the flow and the runner applies the same admission
+checks as SDK calls. Sources and workers can share one process or run in separate hosts
+backed by PostgreSQL.
 
 | Source | Configuration and acknowledgement |
 | --- | --- |
@@ -20,11 +21,19 @@ Incoming process settings are captured when the source is constructed. `process.
 relative to the configuration directory and defaults to that directory; absolute working
 directories are preserved. Executable lookup and argument strings remain literal.
 
+File, stdin, and process inputs accept one JSON value with `format: 'json'` or one
+JSON value per line with `format: 'jsonl'`. Their `maxBytes` defaults to 1 MiB per
+value or line, respectively. A malformed JSONL record stops that source reader.
+Use the [CLI batch command](NODE.md#commands) for per-line parse errors and continued reading.
+
 Spool producers should atomically rename complete files into the directory. Processing files
 have heartbeat leases, stale claims are reclaimed, and malformed records move to quarantine.
-Capacity and transient admission failures retain input for retry. Returning an old claim never
-overwrites a newer producer file with the same name; a conflicting claim stays recoverable in
-the processing directory. Use a local filesystem with atomic rename and hard-link support.
+A definitive input rejection during admission also quarantines the original file. For
+example, a PDF exceeding the configured Cloudflare extraction request limit is quarantined
+before the provider is called. When the queue is full or storage fails transiently, the input
+stays available for retry. If a producer reuses a filename, returning the old claim preserves
+the new file and leaves the old claim in the processing directory. Use a local filesystem
+with atomic rename and hard-link support.
 Processing-directory recovery advances through bounded pages of claims, so live leases in an
 earlier page cannot indefinitely hide expired claims later in the directory.
 
@@ -34,7 +43,10 @@ retained in admission keys.
 `pollMs` defaults to 100 and must be a positive 32-bit millisecond integer. `claimIdleMs`
 defaults to 60000 and must be a nonnegative safe integer; zero reclaims pending entries immediately.
 Invalid names, timing settings and supplied client methods fail before Redis commands.
-The quarantine destination must differ from the input stream. Each Redis source instance
+Quarantine defaults to `<stream>:quarantine`. The source writes the entry ID and error
+there before acknowledging the original entry. Retain the original stream if you need to inspect
+the submitted payload by ID. The quarantine destination must differ from the input stream.
+Each Redis source instance
 supports one consumer. Aborting its open signal or calling `close()` cancels setup, claims,
 polling and remaining batch processing; a supplied client stays open. Messages already yielded
 retain independent acknowledgement and rejection budgets during ingress drain.

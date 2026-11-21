@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
+import { request as httpRequest } from 'node:http';
 import { Readable } from 'node:stream';
 import { ConnectorError } from '../src/index.mjs';
 import { createRunner } from './helpers/runner.mjs';
@@ -8,6 +9,60 @@ import { createHttpHandler, createHttpServer } from '../src/node/http-service.mj
 
 const configuration = { validators: { v: { revision: '1', validate: value => value } },
     flows: { a: { revision: '1', inputs: ['result'], validator: 'v' } } };
+
+test('HTTP reports early input failures while the client is still uploading', { timeout: 10000 }, async () => {
+    const runner = createRunner(configuration);
+    const server = createHttpServer({ runner, flow: 'a', reply: 'complete', allowAdmin: true, maxBytes: 128 });
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    const base = 'http://127.0.0.1:' + server.address().port;
+    try {
+        const original = await runner.run({ flow: 'a', kind: 'result', result: 42 });
+        const exported = await fetch(base + '/tasks/' + original.taskId + '/export');
+        assert.equal(exported.status, 200);
+        const archive = await exported.text();
+        for (const [path, prefix, status, code] of [
+            ['/tasks/import', archive + archive, 400, 'INVALID_TRANSFER'],
+            ['/tasks', ' '.repeat(129), 429, 'RESOURCE_LIMIT'],
+        ]) {
+            const upload = httpRequest(base + path, { method: 'POST', signal: AbortSignal.timeout(3000) });
+            try {
+                const received = once(upload, 'response');
+                upload.write(prefix);
+                const [response] = await received;
+                const chunks = [];
+                for await (const chunk of response) chunks.push(chunk);
+                assert.equal(response.statusCode, status);
+                assert.equal(JSON.parse(Buffer.concat(chunks)).error.code, code);
+                assert.equal(response.headers.connection, 'close');
+            } finally { upload.destroy(); }
+        }
+        assert.equal((await runner.list()).items.length, 1);
+        const accepted = await fetch(base + '/tasks/import', { method: 'POST', body: archive });
+        assert.equal(accepted.status, 202);
+        assert.ok((await accepted.json()).value.taskId);
+    } finally { await server.drain(); await runner.close(); }
+});
+
+test('HTTP reports export failures as JSON until the first archive frame is sent', async () => {
+    const runner = createRunner({ ...configuration, limits: { maxTransfers: 1 } });
+    const server = createHttpServer({ runner, flow: 'a', reply: 'complete' });
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    try {
+        const { taskId } = await runner.run({ flow: 'a', kind: 'result', result: 42 });
+        const url = 'http://127.0.0.1:' + server.address().port + '/tasks/' + taskId + '/export';
+        const lease = await runner.openSnapshot(taskId);
+        try {
+            const refused = await fetch(url);
+            assert.equal(refused.status, 429);
+            assert.equal(refused.headers.get('content-type'), 'application/json');
+            assert.equal((await refused.json()).error.code, 'RESOURCE_LIMIT');
+        } finally { await runner.closeSnapshot(lease.id); }
+        const exported = await fetch(url);
+        assert.equal(exported.status, 200);
+        assert.equal(exported.headers.get('content-type'), 'application/x-ndjson');
+        assert.equal(JSON.parse((await exported.text()).split('\n')[0]).type, 'header');
+    } finally { await server.drain(); await runner.close(); }
+});
 
 test('HTTP rejects malformed UTF-8 before admission and preserves valid Unicode', async () => {
     const runner = createRunner(configuration);

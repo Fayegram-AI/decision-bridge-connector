@@ -1,4 +1,5 @@
-import { assert, bounded, id, publicError, snapshot } from '../util.mjs';
+import { abortError, assert, bounded, id, publicError, snapshot } from '../util.mjs';
+import { directCloudflarePreflight } from '../operations.mjs';
 import { planOutputs } from './planning.mjs';
 import { deliveryDisposition, retryDeadline, unconfirmedAcceptance } from './freshness.mjs';
 import { executeChain } from './chaining.mjs';
@@ -14,6 +15,13 @@ async function evaluate(task, job, { store, options, signal }) {
         assert(evaluator?.revision === task.plan.evaluatorRevision && typeof evaluator.execute === 'function',
             'Evaluator revision is unavailable.', 'REVISION_UNAVAILABLE');
         assert(deadline > Date.now(), 'Evaluation deadline elapsed.', 'EXPIRED');
+        const preflight = directCloudflarePreflight(evaluator);
+        if (preflight) {
+            if (signal?.aborted) throw abortError('evaluation');
+            preflight(task.request);
+            if (signal?.aborted) throw abortError('evaluation');
+            assert(deadline > Date.now(), 'Evaluation deadline elapsed before the invocation marker.', 'EXPIRED');
+        }
     } catch (error) { return { error }; }
     await store.commit(job, { job: { stage: 'invoked' } });
     let result; let invoked = false;
@@ -52,6 +60,15 @@ export async function executeClaim(claim, { store, options, signal, onEvent, cha
         } else if (job.kind === 'chain') {
             await executeChain(task, job, { store, chain, signal: combined });
         } else if (job.kind === 'evaluation') {
+            // Older stores could requeue a reconciliation without recording either outcome.
+            if ((job.stage === 'reconciled' || Object.hasOwn(job, 'resolution')) && task.result === undefined &&
+                !task.errors.some(error => error.stage === 'evaluation')) {
+                const error = { code: 'INVALID_RESOLUTION', message: 'Recovered evaluation has no result or failure evidence.',
+                    stage: 'evaluation', ambiguous: true };
+                await store.commit(job, { task: { errors: [...task.errors, error] },
+                    job: { state: 'unknown', stage: 'failed', token: null, leaseUntil: null } });
+                return;
+            }
             if (task.result === undefined && task.errors.length === 0) {
                 const outcome = await evaluate(task, job, { store, options, signal: combined });
                 if (Object.hasOwn(outcome, 'error')) {

@@ -1,5 +1,32 @@
-import { validateResult } from '@fayegram-ai/decision-bridge';
+import { DecisionError, validateResult } from '@fayegram-ai/decision-bridge';
+import { CloudflareExtractionProvider } from '@fayegram-ai/decision-bridge/extraction';
 import { assert, freeze, identifier, isRecord, keysOnly, snapshot, validateSignal } from './util.mjs';
+
+// Internal identity map. A provider name or flow option cannot enable a worker preflight.
+const directCloudflareProviders = new WeakMap();
+const cloudflarePrototype = CloudflareExtractionProvider.prototype;
+const { validate: validateCloudflare, extract: extractCloudflare } = cloudflarePrototype;
+
+export function inheritExtractionPreflight(source, configured) {
+  const provider = directCloudflareProviders.get(source);
+  if (provider) directCloudflareProviders.set(configured, provider);
+}
+
+export function directCloudflarePreflight(evaluator) {
+  const provider = directCloudflareProviders.get(evaluator);
+  if (!provider) return;
+  return request => {
+    try { validateCloudflare.call(provider, request); }
+    catch (error) {
+      // Core reads its private settings first. Only a branded receiver can reach its validation errors.
+      // Check for later overrides by descriptor so a host's getter never runs before the marker.
+      if (error instanceof DecisionError && Object.getPrototypeOf(provider) === cloudflarePrototype &&
+          !Object.hasOwn(provider, 'validate') && !Object.hasOwn(provider, 'extract') &&
+          Object.getOwnPropertyDescriptor(cloudflarePrototype, 'validate')?.value === validateCloudflare &&
+          Object.getOwnPropertyDescriptor(cloudflarePrototype, 'extract')?.value === extractCloudflare) throw error;
+    }
+  };
+}
 
 function routingOptions(options) {
   keysOnly(options, ['route', 'candidates', 'labels', 'routingDescription', 'onAmbiguity', 'clarify', 'signal', 'timeoutMs'], 'Routing call options');
@@ -77,14 +104,17 @@ export function routedDecisionEvaluator(router, { revision = '1', callOptions = 
 }
 
 export function extractionEvaluator(provider, { revision = '1' } = {}) {
-  assert(provider && typeof provider.extract === 'function' && typeof provider.validate === 'function' && typeof provider.validateResult === 'function', 'A public extraction provider is required.');
-  return Object.freeze({ operation: 'extraction', revision: identifier(revision, 'Evaluator revision'),
+  const { extract, validate } = provider ?? {};
+  assert(typeof extract === 'function' && typeof validate === 'function' && typeof provider.validateResult === 'function', 'A public extraction provider is required.');
+  const evaluator = Object.freeze({ operation: 'extraction', revision: identifier(revision, 'Evaluator revision'),
     validate(request) { provider.validate(request); return request; },
     execute: (request, { signal }) => provider.extract(request, { signal }),
     validateSaved(result, request) {
       try { return freeze(snapshot(provider.validateResult(result, request))); }
       catch { assert(false, 'Saved extraction output or provenance is invalid.', 'INVALID_SAVED_OUTPUT'); }
     } });
+  if (validate === validateCloudflare && extract === extractCloudflare) directCloudflareProviders.set(evaluator, provider);
+  return evaluator;
 }
 
 export function routedExtractionEvaluator(router, { revision = '1', callOptions = {} } = {}) {

@@ -32,14 +32,12 @@ The embedded SDK exports these adapters:
 The Node configuration layer constructs built-in evaluator types `decision`, `extraction`,
 and `routing` from their trusted `options`. A `decision` instance constructs a Bridge and
 its provider within the CLI/service process. These adapters consume the installed
-Decision Bridge 0.1.8 package through its public exports.
+Decision Bridge package through its public exports.
 
-The [Core 0.1.8 release](https://github.com/Fayegram-AI/decision-bridge/tree/decision-bridge-v0.1.8)
-defines provider request, response, media and model contracts. Existing adapters
-accept additive provider responses through those public APIs and retain the
-result fields supplied by Core, including native usage metadata. Core's common
-decoding determines which native fields enter the common result. Connector's
-data limits, saved schema 3 and explicit routing policies remain applicable.
+Decision Bridge defines provider request, response, media and model contracts.
+Its decoder selects the native fields for the common result. The adapters retain
+those fields, including usage metadata. The Connector applies its own data limits,
+saved schema 3 and routing policies.
 Anthropic output defaults follow the effective request model; omitting
 `responseFormat` allows Core to choose JSON schema for models that do not support
 forced tools. An explicitly incompatible tool format fails before dispatch.
@@ -96,10 +94,12 @@ an interrupted provider call can leave an unknown outcome requiring reconciliati
 
 Evaluator output must be bounded plain JSON under the [data limits](DATA.md#limits-and-storage).
 The evaluator owns semantic validation of fresh responses; the runner checks JSON capture
-and resource bounds. A separate flow `validator` is used for existing-result admission,
-imports, and recovered evaluation results. Alternatively, an evaluator can implement
-`validateSaved(result, request, context)` for those paths. Enable `inputs: ['result']`
-only with one of these saved-result validation contracts.
+and resource bounds. For saved results, the runner uses the flow's `validator` when
+configured. Otherwise, it uses the evaluator's `validateSaved(result, request, context)`.
+Replay and recovery supply the normalized evaluated request, including `null`. For a
+result-only submission, `validateSaved` receives the caller's `validation.request`,
+which can be any JSON value or `undefined`. Check its shape before reading fields.
+Enable `inputs: ['result']` only with one of these saved-result validation contracts.
 
 An external result can retain its own shape when delivered as `raw-result` or interpreted
 by a custom policy module. To use the built-in decision policies, normalize it to the
@@ -181,7 +181,7 @@ const request = {
 ```
 
 CLI JSONL batch submits ordinary Gemini decision calls through the same flow. See
-Core's [Gemini guide](https://github.com/Fayegram-AI/decision-bridge/blob/decision-bridge-v0.1.8/docs/guides/GEMINI_DECISIONS.md)
+Core's [Gemini guide](https://github.com/Fayegram-AI/decision-bridge/blob/decision-bridge-v0.1.9/docs/guides/GEMINI_DECISIONS.md)
 for provider MIME support and transport budgets.
 
 Explicit resolution produces Core result `meta.schemaVersion: 8`. Documents, remote
@@ -227,3 +227,36 @@ An extraction provider supplies `validate`, `extract` and synchronous
 validator without inference. It checks the configured provider and model plus
 the field response contract. OpenRouter preserves omitted `truncated` and
 nullable `state_text`; Cloudflare continues to require `truncated`.
+
+### Cloudflare extraction
+
+Cloudflare extraction defaults to `clairic`. Set the provider model to `clairic-flash`
+to use Flash when a request omits `model`. Requests can also use the fully qualified
+`@cf/cloudflare/clairic` and `@cf/cloudflare/clairic-flash` selectors. Both models
+accept inline PDFs in the extraction request's `documents` array. For a flow named
+`extract` with a Cloudflare extraction evaluator, submit the encoded PDF and the fields
+to extract.
+
+```js
+import { readFile } from 'node:fs/promises';
+
+const pdf = await readFile('invoice.pdf');
+const report = await runner.run({
+    flow: 'extract',
+    kind: 'request',
+    request: {
+        model: 'clairic-flash',
+        documents: [{ content_type: 'application/pdf', base64: pdf.toString('base64') }],
+        fields: { total: { type: 'number' } },
+    },
+});
+```
+
+The encoded request must fit both Connector input limits and Core's attachment limits.
+Cloudflare responses can contain null spans. See the [Core extraction guide](https://github.com/Fayegram-AI/decision-bridge/blob/decision-bridge-v0.1.9/docs/guides/EXTRACTION.md).
+
+Configured direct Cloudflare evaluators check queued requests against the provider's
+limits before the worker records invocation. For the same check in an embedded runner,
+pass an unmodified `CloudflareExtractionProvider` from the same Decision Bridge module
+instance the Connector uses to `extractionEvaluator`. Other evaluators use their
+configured dispatch path.

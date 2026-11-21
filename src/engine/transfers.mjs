@@ -4,9 +4,25 @@ import { ADMISSION_OWNER } from './admission-owner.mjs';
 
 /** Stream ownership is local to the iterator; explicit sessions use renewable leases. */
 export function runnerTransfers({ store, namespace, ready, track, trackAdmission, submit, get, signal: lifetime }) {
-    const snapshots = new Set();
-    const imports = new Set();
+    const owned = new Set();
+    function ownLease(close, signal) {
+        let closing;
+        function release() {
+            if (!closing) {
+                signal?.removeEventListener('abort', release);
+                // Close is idempotent. Retry a transient write failure without changing the stream outcome.
+                // If the store stays unavailable, the lease expires under its normal TTL.
+                closing = Promise.resolve().then(close).catch(() => close()).catch(() => {}).finally(() => owned.delete(release));
+            }
+            return closing;
+        }
+        owned.add(release);
+        if (signal?.aborted) void release();
+        else signal?.addEventListener('abort', release, { once: true });
+        return release;
+    }
     async function finish(transferId, signal = lifetime) {
+        if (signal.aborted) throw abortError('import');
         const saved = await store.importedTask(namespace, transferId);
         if (signal.aborted) throw abortError('import');
         if (saved.taskId) return get(saved.taskId);
@@ -40,22 +56,25 @@ export function runnerTransfers({ store, namespace, ready, track, trackAdmission
             const combined = signal ? AbortSignal.any([signal, lifetime]) : lifetime;
             if (combined.aborted) throw abortError('export');
             const lease = await track(() => store.openSnapshot(namespace, taskId));
-            snapshots.add(lease.id);
+            const release = ownLease(() => store.closeSnapshot(namespace, lease.id), combined);
             try {
                 let after;
                 do {
                     if (combined.aborted) throw abortError('export');
                     const page = await track(() => store.readExportFrames(namespace, lease.id, { after }));
                     for (const frame of page.frames) {
+                        if (combined.aborted) throw abortError('export');
                         const encoded = wireBytes(frame); const line = new Uint8Array(encoded.length + 1);
                         line.set(encoded); line[encoded.length] = 10; yield line;
                     }
+                    if (combined.aborted) throw abortError('export');
                     after = page.next;
                 } while (after);
-            } finally {
-                snapshots.delete(lease.id);
-                await store.closeSnapshot(namespace, lease.id).catch(() => {});
-            }
+            } catch (error) {
+                // Cancellation can close the snapshot while a page read is in flight.
+                if (combined.aborted) throw abortError('export');
+                throw error;
+            } finally { await release(); }
         },
         async importTask(chunks, { flow, signal } = {}) {
             validateSignal(signal);
@@ -65,21 +84,26 @@ export function runnerTransfers({ store, namespace, ready, track, trackAdmission
                 const flows = await ready;
                 assert(typeof flow === 'string' && Object.hasOwn(flows, flow), 'Import requires an explicitly authorized flow.');
                 if (combined.aborted) throw abortError('import');
-                const lease = await store.openImport(namespace, flow, flows[flow].runtimeRevision); imports.add(lease.id);
+                const lease = await store.openImport(namespace, flow, flows[flow].runtimeRevision);
+                const release = ownLease(() => store.closeImport(namespace, lease.id));
                 try {
-                    for await (const frame of parseFrames(chunks, { signal: combined, maxBytes: store.limits.maxTransferBytes, idleMs: store.limits.transferIdleMs }))
+                    // A file contains one ordered archive. Explicit appendImport sessions allow retries.
+                    let nextSequence = 0; let ended = false;
+                    for await (const frame of parseFrames(chunks, { signal: combined, maxBytes: store.limits.maxTransferBytes, idleMs: store.limits.transferIdleMs })) {
+                        if (combined.aborted) throw abortError('import');
+                        assert(!ended && frame?.seq === nextSequence, 'Unexpected archive frame sequence.', 'INVALID_TRANSFER');
                         await store.appendImport(namespace, lease.id, frame);
+                        nextSequence++;
+                        ended = frame.type === 'end';
+                    }
                     if (combined.aborted) throw abortError('import');
+                    assert(ended, 'Archive ended without an integrity trailer.', 'INVALID_TRANSFER');
                     return await finish(lease.id, combined);
-                } finally {
-                    imports.delete(lease.id);
-                    await store.closeImport(namespace, lease.id).catch(() => {});
-                }
+                } finally { await release(); }
             });
         },
     };
     return { methods, async close() {
-        await Promise.allSettled([...snapshots].map(snapshotId => store.closeSnapshot(namespace, snapshotId)));
-        await Promise.allSettled([...imports].map(transferId => store.closeImport(namespace, transferId)));
+        await Promise.all([...owned].map(release => release()));
     } };
 }

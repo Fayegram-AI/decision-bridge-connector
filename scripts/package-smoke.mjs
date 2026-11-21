@@ -9,6 +9,7 @@ import { coreScenario } from './package-core-scenario.mjs';
 const root = process.cwd();
 const temporary = await mkdtemp(join(tmpdir(), 'dbc-package-'));
 const original = await Promise.all(['package.json', 'package-lock.json'].map(file => readFile(file, 'utf8')));
+const expected = JSON.parse(original[0]);
 const npm = 'npm';
 function command(file, args, cwd = root) {
     const invocation = file === npm ? npmCommand(args) : { command: file, args };
@@ -42,12 +43,22 @@ try {
     const cacheMode = process.argv.includes('--offline') ? '--offline' : '--prefer-offline';
     command(npm, ['install', cacheMode, '--ignore-scripts', '--omit=dev', '--omit=optional', '--no-audit', '--no-fund',
         ...(coreArchive ? [coreArchive] : []), archive], consumer);
+    const installed = join(consumer, 'node_modules', expected.name);
+    const manifest = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
+    assert.equal(manifest.name, expected.name, 'Installed package name differs from the checkout.');
+    assert.equal(manifest.version, expected.version, 'Installed package version differs from the checkout.');
     const installedCore = JSON.parse(await readFile(join(consumer, 'node_modules/@fayegram-ai/decision-bridge/package.json'), 'utf8'));
-    assert.equal(installedCore.version, JSON.parse(original[0]).dependencies['@fayegram-ai/decision-bridge'], 'Incorrect core dependency installed.');
-    const installed = join(consumer, 'node_modules/@fayegram-ai/decision-bridge-connectors');
+    assert.equal(installedCore.version, expected.dependencies['@fayegram-ai/decision-bridge'], 'Incorrect core dependency installed.');
     await writeFile(join(consumer, 'core-boundary.mjs'), coreScenario);
     console.log(command(process.execPath, ['core-boundary.mjs'], consumer).trim());
-    const manifest = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
+    // Resolve public imports from the fresh installation. Old records stay outside the package.
+    const upgradeTest = 'cloudflare-extraction-upgrade.test.mjs';
+    await cp(join(root, 'test', upgradeTest), join(consumer, upgradeTest));
+    await mkdir(join(consumer, 'fixtures'));
+    for (const file of ['clairic-core-0.1.8-queue.json', 'clairic-core-0.1.8.ndjson']) {
+        await cp(join(root, 'test', 'fixtures', file), join(consumer, 'fixtures', file));
+    }
+    console.log(command(process.execPath, ['--test', '--test-reporter=spec', upgradeTest], consumer).trim());
     // Inspect installed bytes even when an explicit archive bypasses the initial pack step.
     const shipped = await inventory(installed);
     const examplesAllowed = new Set(manifest.files.filter(file => file.startsWith('examples/')));

@@ -13,6 +13,15 @@ export function captureCompletion(value, maxBytes) {
     return snapshot(value, { maxBytes, rootValueKeys: completionFields });
 }
 
+/** Only a recovered result or a confirmed failure may unblock evaluation planning. */
+export function captureEvaluationResolution(resolution, maxBytes) {
+    const value = captureObject(resolution, ['result'], maxBytes);
+    assert(['succeeded', 'failed'].includes(value.status), 'Resolution must be succeeded or failed.');
+    assert(typeof value.reason === 'string' && value.reason.trim().length > 0, 'Evaluation resolution requires an audit reason.');
+    assert(value.status === 'failed' || Object.hasOwn(value, 'result'), 'Successful resolution requires the recovered result.');
+    return value;
+}
+
 export function captureDeliveryResolution(value, maxBytes) {
     return captureEnvelope(value, {
         receipt: body => captureReceiptBody(body, maxBytes),

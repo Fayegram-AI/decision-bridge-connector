@@ -14,15 +14,15 @@ external decision services or rules engines directly. See
 
 ## Installation
 
-Install [Decision Bridge Connectors from npm](https://www.npmjs.com/package/@fayegram-ai/decision-bridge-connectors/v/0.1.1)
+Install [Decision Bridge Connectors from npm](https://www.npmjs.com/package/@fayegram-ai/decision-bridge-connectors)
 in the application that will use the SDK or CLI.
 
 ```sh
-npm install @fayegram-ai/decision-bridge-connectors@0.1.1
+npm install @fayegram-ai/decision-bridge-connectors@0.1.2
 npx decision-bridge-connectors --help
 ```
 
-Installation includes Decision Bridge 0.1.8. Memory storage needs no database setup.
+Installing the Connector also installs Decision Bridge. Memory storage needs no database setup.
 Install optional integration peers only when using their adapters; see
 [supported peer versions](docs/INTEGRATIONS.md#optional-dependencies-and-ownership).
 
@@ -125,9 +125,10 @@ tracks tasks, evidence, jobs, attempts, and receipts. See [store choice and rete
 Workers write results and delivery plans to the configured store before dispatch. Retryable
 definite failures can retry within their budgets; local validation and encoding rejections
 settle without automatic retry.
-Interrupted external effects become `unknown`; safe automatic replay requires
-an explicitly declared recipient idempotency contract. A receipt records acceptance separately
-from downstream completion. This provides durable coordination, not universal exactly-once effects.
+An evaluation with an uncertain provider outcome stays `unknown` until an operator supplies
+evidence. A delivery with uncertain acceptance can retry automatically only when its connector
+declares idempotency and the connection opts in. A receipt records acceptance separately from
+downstream completion. See [state and recovery](docs/ARCHITECTURE.md#state-and-recovery).
 
 The [documentation index](docs/README.md) covers SDK/host boundaries, evaluator selection,
 storage, policies, transports, and verification.
