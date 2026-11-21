@@ -4,7 +4,7 @@ import { createPostgresStore } from '../src/storage/postgres.mjs';
 import type { ChainRetry } from '../src/index.mjs';
 import { createMcpConnector, type McpOptions } from '@fayegram-ai/decision-bridge-connectors/mcp';
 import { attachLiveController } from '../src/integrations/live.mjs';
-import { decisionEvaluator } from '../src/index.mjs';
+import { ConnectorError, decisionEvaluator, publicError, type Evaluator } from '../src/index.mjs';
 import { createBridge, createProvider, type EvaluationRequest } from '@fayegram-ai/decision-bridge';
 const geminiRequest: EvaluationRequest = { input: [
     { type: 'document', url: 'https://example.invalid/report.pdf' },
@@ -13,6 +13,20 @@ const geminiRequest: EvaluationRequest = { input: [
     { type: 'video', url: 'https://example.invalid/clip.mp4', mimeType: 'video/mp4', resolution: 'high' },
 ], questions: { ready: { type: 'noul', instructions: 'Ready?' } } };
 const geminiProvider = createProvider({ type: 'gemini-decisions', apiKey: 'fixture' });
+const admissionFailure = new ConnectorError('INVALID_RESULT', 'Invalid result.', { inputInvalid: true });
+const invalidInput: boolean | undefined = admissionFailure.inputInvalid;
+const diagnostics = publicError(admissionFailure);
+const errorSource: 'client' | 'provider' | undefined = diagnostics.source;
+const providerAttempts: number | undefined = diagnostics.attempts;
+void invalidInput; void errorSource; void providerAttempts;
+const savedEvaluator: Evaluator<{ model: string }, string> = {
+    revision: '1', execute: request => request.model,
+    validateSaved(_result, request) {
+        // @ts-expect-error A standalone result can omit the request or supply a different shape.
+        return request.model;
+    },
+};
+void savedEvaluator;
 const geminiAdapter = decisionEvaluator(createBridge({ provider: geminiProvider }), {
     validationOptions: request => geminiProvider.getResultValidationOptions(request.model),
 });
@@ -54,6 +68,9 @@ void runner.reprocess('task', { ...preparation, flow: 'review' });
 void runner.redeliver('task', { ...preparation, flow: 'review' });
 void runner.reevaluate('task', preparation);
 void runner.resolveEvaluation('task', { status: 'succeeded', result: 1, reason: 'Recovered.' }, preparation);
+void runner.store.resolveEvaluation('namespace', 'task', { status: 'succeeded', result: null, reason: 'Recovered.' });
+// @ts-expect-error A successful evaluation resolution requires the recovered result.
+void runner.store.resolveEvaluation('namespace', 'task', { status: 'succeeded', reason: 'Missing result.' });
 // @ts-expect-error Preparation cancellation requires a real AbortSignal.
 void runner.preview(input, { signal: {} });
 void runner.submit(input, { source: 'typed-source', signal: new AbortController().signal });

@@ -51,7 +51,9 @@ export function toolSchema(action, flows) {
         if (action === 'appendImport') { properties.frame = frame; required.push('frame'); }
     }
     else if (action === 'resolveEvaluation') {
-        properties = { taskId: string, resolution: { type: 'object', required: ['status', 'reason'], properties: { status: { enum: ['succeeded', 'failed'] }, reason: string, result: {} } } };
+        properties = { taskId: string, resolution: { type: 'object', required: ['status', 'reason'],
+            properties: { status: { enum: ['succeeded', 'failed'] }, reason: { ...string, pattern: '\\S' }, result: {} },
+            if: { properties: { status: { const: 'succeeded' } } }, then: { properties: { result: {} }, required: ['result'] } } };
         required = ['taskId', 'resolution'];
     } else if (action !== 'inspect') {
         properties = { deliveryId: string }; required = ['deliveryId'];

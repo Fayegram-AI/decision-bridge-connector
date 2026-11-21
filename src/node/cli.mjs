@@ -42,6 +42,12 @@ function parse(argv) {
     return { positional, flags };
 }
 
+/** The runner checks flow and transfer capacity before it asks for archive bytes. */
+function importSource(path, stdin, signal) {
+    if (!path || path === '-') return stdin;
+    return { [Symbol.asyncIterator]: () => createReadStream(path, { signal })[Symbol.asyncIterator]() };
+}
+
 const invalidInputCodes = new Set(['CONFIGURATION_ERROR', 'VALIDATION_ERROR', 'INVALID_JSON', 'INPUT_TOO_LARGE',
     'INVALID_UTF8', 'INVALID_TRANSFER', 'UNSUPPORTED_SCHEMA', 'CREDENTIAL_UNAVAILABLE', 'NOT_FOUND', 'CONFLICT']);
 
@@ -151,7 +157,6 @@ export async function main(argv, { stdin = process.stdin, stdout = process.stdou
         else {
             const action = ({ status: 'get', retry: 'retryDelivery', resolve: 'resolveDelivery', 'resolve-evaluation': 'resolveEvaluation', completion: 'recordCompletion', export: 'exportTask', import: 'importTask' })[command] ?? command;
             const selectedOptions = { ...options, ...(flags.flow ? { flow: flags.flow } : {}) };
-            const imported = command === 'import' ? (!flags.input || flags.input === '-' ? stdin : createReadStream(flags.input)) : undefined;
             if (flags.reply === 'final') {
                 const taskId = ['retry', 'resolve', 'completion'].includes(command) ? target?.split(':delivery:')[0] : target;
                 const saved = taskId ? await runner.store.get(taskId, runner.namespace, { metadata: true }) : null;
@@ -160,9 +165,12 @@ export async function main(argv, { stdin = process.stdin, stdout = process.stdou
                     ? Object.hasOwn(loaded.config.flows, flow) && loaded.config.flows[flow] : saved ? await readPart(runner, taskId, ['plan']) : null;
                 assert(definition, 'Reply requires an available execution flow.'); validateReply(flags, command, definition);
             }
-            value = command === 'import' ? await runner.importTask(imported, { ...selectedOptions, signal: controller.signal }) : await invoke(runner, action, { taskId: target, deliveryId: target, options: selectedOptions,
+            if (command === 'import') {
+                const chunks = importSource(flags.input, stdin, controller.signal);
+                value = await runner.importTask(chunks, { ...selectedOptions, signal: controller.signal });
+            } else value = await invoke(runner, action, { taskId: target, deliveryId: target, options: selectedOptions,
                 ...(['resolve', 'resolve-evaluation'].includes(command) ? { resolution: await input() } : {}), ...(command === 'completion' ? { completion: await input() } : {}),
-                ...(command === 'import' ? { value: imported } : {}), ...(command === 'list' ? options : {}) }, { source: 'cli', signal: controller.signal });
+                ...(command === 'list' ? options : {}) }, { source: 'cli', signal: controller.signal });
         }
         await writeStream(stdout, `${JSON.stringify(await output(value ?? null, flags, runner))}\n`, controller.signal);
         return value?.status && ['failed', 'partial', 'unknown', 'cancelled'].includes(value.status) ? 1 : 0;

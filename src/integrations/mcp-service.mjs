@@ -12,6 +12,7 @@ import { SOURCE_ACTIVE } from '../node/host-activation.mjs';
 const reads = ['get', 'list', 'inspect', 'preview', 'openSnapshot', 'listSnapshot', 'readSnapshot', 'closeSnapshot', 'readExportFrames'];
 const writes = ['submit', 'run'];
 const administrative = ['retryDelivery', 'resolveDelivery', 'resolveEvaluation', 'recordCompletion', 'cancel', 'pause', 'reprocess', 'redeliver', 'reevaluate', 'openImport', 'appendImport', 'finishImport', 'closeImport'];
+const bodyErrorStatus = new Map([['INPUT_TOO_LARGE', 413], ['RESOURCE_LIMIT', 413], ['INVALID_JSON', 400], ['VALIDATION_ERROR', 400]]);
 
 /** Host authority is fixed at construction; borrow the runner, signal and explicit callbacks. */
 function captureOptions(options = {}) {
@@ -95,6 +96,13 @@ export async function serveMcpStdio(options) {
     return server;
 }
 
+function rejectHttpRequest(request, response, status) {
+    if (response.headersSent || response.destroyed || response.writableEnded) { response.destroy(); return; }
+    if (request.complete === false) response.setHeader('connection', 'close');
+    response.statusCode = status;
+    response.end();
+}
+
 export async function createMcpHttpHandler(options) {
     options = captureOptions(options);
     const permittedRequest = createRequestPolicy(options);
@@ -102,7 +110,7 @@ export async function createMcpHttpHandler(options) {
     const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
     return async (request, response, body) => {
         const lifetime = requestLifetime(request, response, options.signal);
-        let server; let transport; let closing; let connecting = false; let readingInput = false;
+        let server; let transport; let closing; let bodyDeadline; let connecting = false; let readingInput = false;
         const close = () => closing ??= (async () => {
             lifetime.close();
             response.removeListener('close', onClose); lifetime.signal.removeEventListener('abort', onAbort);
@@ -116,13 +124,16 @@ export async function createMcpHttpHandler(options) {
         response.once('close', onClose);
         lifetime.signal.addEventListener('abort', onAbort, { once: true });
         try {
-            if (!permittedRequest(request)) { response.statusCode = 403; response.end(); return; }
+            if (!permittedRequest(request)) { rejectHttpRequest(request, response, 403); return; }
             server = await createMcpServer({ ...options, signal: lifetime.signal });
             if (lifetime.signal.aborted) { await bounded(() => server.close(), { timeoutMs: 1000 }).catch(() => {}); response.destroy(); return; }
             transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
             readingInput = true;
             if (request.method === 'POST' && body === undefined) {
-                body = await readJson('-', { stdin: request, maxBytes: options.maxBytes ?? 1048576, signal: AbortSignal.any([lifetime.signal, AbortSignal.timeout(30000)]) });
+                // An input rejection still needs the socket to send its HTTP status.
+                bodyDeadline = AbortSignal.timeout(30000);
+                body = await readJson('-', { stdin: request.iterator({ destroyOnReturn: false }), maxBytes: options.maxBytes ?? 1048576,
+                    signal: AbortSignal.any([lifetime.signal, bodyDeadline]) });
                 validateWireNumbers(body);
             } else if (body !== undefined) body = captureMcpBody(body, options.maxBytes ?? 1048576);
             readingInput = false;
@@ -131,9 +142,8 @@ export async function createMcpHttpHandler(options) {
         }
         catch (error) {
             const code = publicError(error).code;
-            const status = !readingInput ? 500 : ['INPUT_TOO_LARGE', 'RESOURCE_LIMIT'].includes(code) ? 413 : ['INVALID_JSON', 'VALIDATION_ERROR'].includes(code) ? 400 : 500;
-            if (!response.headersSent && !response.destroyed && !response.writableEnded) { response.statusCode = status; response.end(); }
-            else response.destroy();
+            const inputStatus = code === 'ABORTED' && bodyDeadline?.aborted ? 408 : bodyErrorStatus.get(code);
+            rejectHttpRequest(request, response, (readingInput && inputStatus) || 500);
             await close();
         } finally {
             if (response.writableEnded || response.destroyed) {

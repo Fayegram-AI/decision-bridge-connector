@@ -80,9 +80,10 @@ streaming, call `readSnapshot(snapshotId, partId, { offset, maxBytes })`; it ret
 canonical UTF-8 JSON as base64, up to 65,536 decoded bytes, plus `nextOffset`.
 Decode UTF-8 across page boundaries because a character may span chunks.
 
-`preview` validates and plans without inference or delivery. It returns a summary
-and a `snapshot` lease for inspecting the prepared request, policies, and outputs.
-Close preview snapshots when finished.
+`preview` returns a summary and a snapshot lease without admitting an execution.
+For request or event input, inspect the prepared request in the snapshot. For
+result input, inspect the policy decisions and planned outputs. Close the
+snapshot when finished.
 
 Snapshot creation atomically captures task/job metadata and pins immutable values.
 Later cancellation, settlement, or live-record retirement cannot change that view.
@@ -101,6 +102,7 @@ Generated plans are bounded to 64 MiB; metadata and retained diagnostics to 64 K
 Diagnostic origin annotations share that budget. History entries whose details exceed it retain
 their code and disposition with `detailsUnavailable: true`; the originating job keeps its own
 diagnostic within the same limit. Oversized annotations are summarized before terminal settlement.
+Evaluation reconciliation reasons use a separate 64 KiB JSON budget.
 Configuration files have an independent 4 MiB limit. Transport limits also apply.
 Core result metadata versions, including media schemas 7 and 8, are opaque result
 data within Connector saved schema 3. A provider's larger request or JSON-node budget
@@ -131,11 +133,16 @@ is renewable; it is separate from HTTP response and source-processing budgets.
 
 ## Framed export and import
 
-`exportTask(taskId, { signal })` returns an async iterable of byte chunks. It opens
-and closes its own snapshot. `importTask(byteIterable, { flow, signal })` verifies
-the stream and admits a saved result into an explicitly selected destination flow.
-Consume/write chunks as they arrive; collecting them defeats the streaming memory
-boundary. The importer also accepts a synchronous iterable of byte chunks.
+`exportTask(taskId, { signal })` streams byte chunks and owns the snapshot it opens.
+Consume or write each chunk as it arrives. If you stop reading, break out of the
+`for await` loop, call `return()` on the iterator, or abort the signal. Abort
+initiates snapshot cleanup even while the consumer is paused.
+
+`importTask(byteIterable, { flow, signal })` accepts a synchronous or asynchronous
+iterable of byte chunks. Supply one complete archive with each frame appearing once
+in sequence. To retry a file import, start again from the first frame. The runner
+closes its stream-owned leases on completion or failure. If cleanup cannot reach
+the store, the lease expires under `transferIdleMs`.
 
 The wire format is newline-terminated canonical JSON frames with increasing `seq`:
 one schema-v3 `header`, fragmented task/job `record` frames, unique value `chunk`
@@ -150,13 +157,21 @@ Checksums detect alteration; they do not authenticate an archive's author.
 If import reports an invalid value order, create a new archive with `exportTask` or a fresh
 snapshot. Reordering existing frames invalidates the integrity chain.
 
-Imports validate the saved result with the destination flow, retaining the original
-validation context and normalized evaluated request when present. They create a new
-root lineage and do not restore archived jobs, attempts, acknowledgements, or external
-effects. The archive checksum supplies a stable destination admission key, allowing
-completion retries to find the same imported execution.
+Import admits the saved result as a new root execution. The destination validates
+the result with the retained validation context and normalized request, when present.
+The worker uses the destination flow's policies and connections to plan new work,
+including deliveries. For validation alone, choose a result flow with no connections.
+The archive checksum supplies a stable destination admission key for completion retries.
 
-MCP and JSON operation clients use explicit sessions:
+For a Cloudflare extraction archive, select a destination with the original provider
+and model settings. A saved request that omitted `model` relies on that profile's
+default. Import and reprocess validate the original request and result together.
+If the destination uses a custom `validator`, validate the saved envelope and
+`validation.request` against the provider contract and model you trust.
+
+MCP and JSON operation clients use explicit sessions. SDK callers can use the same
+methods when they need to resume by cursor or retry an individual frame. The caller
+owns these sessions and should close them even when an operation fails.
 
 1. `openSnapshot(taskId)`, then `readExportFrames(snapshotId, { after, limit })`.
    Export pages default to one frame and allow at most eight. Repeating a cursor
@@ -186,8 +201,7 @@ selected value through a snapshot. Ordinary report output remains a summary.
 ## Schema boundary
 
 Configuration, reports, persisted stores, process envelopes, and transfer headers
-use schema version 3. Use a fresh database/schema for this contract. Opening a
-database containing schema-1 or schema-2 Connector tables fails with
-`UNSUPPORTED_SCHEMA` before modifying those tables. No automatic migration, reset,
-or older archive import is provided. Preserve existing databases and archives
-separately when switching contracts.
+use schema version 3. Reuse an existing schema-3 store with the same namespace and
+matching flow revisions to resume compatible work. Schema-1 and schema-2 stores
+and archives fail with `UNSUPPORTED_SCHEMA` before schema changes or admission.
+Keep those databases and archives separate and configure a fresh store for schema 3.

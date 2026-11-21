@@ -46,6 +46,21 @@ test('ordered streaming bounds the admission window and retains input order', as
   assert.deepEqual(values, [0, 1, 2, 3]);
 });
 
+test('JSON and ordered input readers leave naturally exhausted iterators alone', async () => {
+  for (const consume of [
+    input => readJson('-', { stdin: input }),
+    input => Array.fromAsync(jsonLines(input)),
+    input => Array.fromAsync(orderedMap(input, value => value)),
+  ]) {
+    const items = [Buffer.from('42\n')].values();
+    let returns = 0;
+    const input = { [Symbol.asyncIterator]() { return this; }, next: () => items.next(),
+      return() { returns++; return { done: true }; } };
+    await consume(input);
+    assert.equal(returns, 0);
+  }
+});
+
 test('ordered cancellation does not await an uncooperative transform and observes late rejection', async () => {
   const controller = new AbortController(); let rejectLater;
   const output = orderedMap([1, 2], value => value === 1 ? new Promise(() => {}) :

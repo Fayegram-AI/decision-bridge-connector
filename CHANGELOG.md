@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2
+
+- Support Clairic Flash and inline PDFs for Cloudflare extraction. Direct Cloudflare
+  workers validate queued requests before dispatch.
+- Preserve the normalized request, including `null`, when validating saved results for
+  recovery, replay and import. Recovery requires an audit reason plus a result or a
+  confirmed failure. The audit reason has its own size limit.
+- Validate archive encoding, frame order and saved-value references before admission.
+  Cancelling a paused export releases its snapshot. Retry a frame in an explicit import
+  session or replay the complete archive when importing from a file.
+- Report CLI import configuration and file-read errors separately. HTTP handlers can return
+  input errors while an upload is in progress, and MCP HTTP returns 408 for a body read timeout.
+
 ## 0.1.1
 
 - Require Node 22.17 or later. Windows spool sources require libuv 1.51 or later and

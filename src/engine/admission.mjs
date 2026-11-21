@@ -1,7 +1,7 @@
 import { assert, bounded, fingerprint, fingerprintFields, invalidInput, freeze, id, isRecord, snapshot } from '../util.mjs';
 import { project, projectCaptured } from '../mapping.mjs';
 import { LIMITS, normalizeSubmission, RECORD_VERSION } from './flows.mjs';
-import { savedValidation } from './reconciliation.mjs';
+import { validateSavedValue } from './reconciliation.mjs';
 import { registeredEntry } from './registry.mjs';
 import { captureAggregateEvent } from './aggregation-values.mjs';
 
@@ -64,10 +64,8 @@ async function prepareInput(input, { flows, options, source, namespace, lineage,
             ? validator?.revision === plan.validatorRevision && typeof validator.validate === 'function'
             : evaluator?.revision === plan.evaluatorRevision && typeof evaluator.validateSaved === 'function',
         'The configured result validator revision is required.', 'REVISION_UNAVAILABLE');
-        const checked = await bounded(signal => validator
-            ? validator.validate(freeze(snapshot(submission.result)), { validation: savedValidation(task), signal })
-            : evaluator.validateSaved(freeze(snapshot(submission.result)), task.request ?? submission.validation?.request, { signal, timeoutMs: plan.timeoutMs }),
-        { signal, timeoutMs: plan.timeoutMs, stage: 'result-validation' });
+        const checked = await bounded(signal => validateSavedValue(task, submission.result, validator, evaluator, signal),
+            { signal, timeoutMs: plan.timeoutMs, stage: 'result-validation' });
         task.result = snapshot(checked === undefined ? submission.result : checked, { maxBytes });
         task.validation = { validator: plan.validator ?? plan.evaluator, revision: plan.validatorRevision, provenance: validator?.provenance ?? 'structural' };
         task.evaluatedAt = createdAt;

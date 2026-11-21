@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import { createRunner } from './helpers/runner.mjs';
 import { createMcpHttpHandler, createMcpServer } from '../src/integrations/mcp-service.mjs';
@@ -83,6 +83,38 @@ test('MCP initialization resource errors remain sanitized HTTP 500 responses', a
     try {
         const response = await fetch(`http://127.0.0.1:${server.address().port}`, { method: 'POST', body: '{}' });
         assert.equal(response.status, 500); assert.equal(await response.text(), '');
+    } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+});
+
+test('MCP HTTP returns size and deadline errors during an open upload and cancels on host shutdown', async t => {
+    const host = new AbortController();
+    let dispatches = 0;
+    const runner = { ready: Promise.resolve({ a: {} }), get() {}, inspect() { dispatches++; return {}; } };
+    const server = createServer(await createMcpHttpHandler({ runner, flows: ['a'], maxBytes: 64, signal: host.signal }));
+    server.listen(0, '127.0.0.1'); await once(server, 'listening');
+    const timeout = AbortSignal.timeout.bind(AbortSignal);
+    let mode;
+    t.mock.method(AbortSignal, 'timeout', ms => {
+        if (ms === 30000 && mode === 'deadline') return timeout(20);
+        if (ms === 30000 && mode === 'shutdown') queueMicrotask(() => host.abort());
+        return timeout(ms);
+    });
+    try {
+        for (mode of ['oversized', 'deadline', 'shutdown']) {
+            const upload = httpRequest('http://127.0.0.1:' + server.address().port, { method: 'POST', signal: timeout(5000) });
+            try {
+                const reply = once(upload, 'response');
+                upload.write(mode === 'oversized' ? ' '.repeat(65) : '{');
+                if (mode === 'shutdown') await assert.rejects(reply, { code: 'ECONNRESET' });
+                else {
+                    const [response] = await reply;
+                    assert.equal(response.statusCode, mode === 'oversized' ? 413 : 408);
+                    assert.equal(response.headers.connection, 'close');
+                    assert.deepEqual(await Array.fromAsync(response), []);
+                }
+            } finally { upload.destroy(); }
+        }
+        assert.equal(dispatches, 0);
     } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 

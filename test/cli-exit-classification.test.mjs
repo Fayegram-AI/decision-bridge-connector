@@ -34,6 +34,29 @@ test('CLI batch emits a result for every record regardless of stream chunking', 
 });
 
 const execute = promisify(execFile);
+test('CLI import reports the primary error once when the archive path is missing', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dbc-cli-import-'));
+    const config = join(directory, 'config.json');
+    try {
+        await writeFile(config, JSON.stringify({ schemaVersion: 3, validators: { v: { type: 'schema', options: { schema: {} } } },
+            flows: { a: { revision: '1', inputs: ['result'], validator: 'v' } } }));
+        const args = [fileURLToPath(new URL('../bin/decision-bridge-connectors.mjs', import.meta.url)),
+            'import', '--config', config, '--input', join(directory, 'missing.ndjson')];
+        for (const [flags, exit, code] of [
+            [['--flow', 'missing'], 2, 'CONFIGURATION_ERROR'],
+            [['--flow', 'a', '--reply', 'final', '--policy', 'missing'], 2, 'CONFIGURATION_ERROR'],
+            [['--flow', 'a'], 1, 'UNEXPECTED_ERROR'],
+        ]) {
+            await assert.rejects(execute(process.execPath, [...args, ...flags], { timeout: 5000 }), error => {
+                assert.equal(error.code, exit);
+                assert.equal(error.stdout, '');
+                assert.equal(JSON.parse(error.stderr).error.code, code);
+                return true;
+            });
+        }
+    } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 for (const mode of ['operation', 'startup', 'configuration', 'schema', 'config-output', 'input']) test(`CLI ${mode} failure uses its documented exit class`, async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dbc-cli-exit-'));
     try {

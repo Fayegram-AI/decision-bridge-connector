@@ -1,14 +1,21 @@
-import type { Bridge, EvaluationRequest, EvaluationResult, JsonValue, ResolvedRequest, ResultValidationOptions } from '@fayegram-ai/decision-bridge';
+import type { Bridge, ErrorDetails as BridgeErrorDetails, EvaluationRequest, EvaluationResult, JsonValue, ResolvedRequest, ResultValidationOptions } from '@fayegram-ai/decision-bridge';
 import type { ExtractionProvider, CommonExtractionRequest as ExtractionRequest, AnyExtractionResult as ExtractionResult } from '@fayegram-ai/decision-bridge/extraction';
 import type { DecisionRouter, ExtractionRouter, RoutedDecisionResult, RoutedExtractionResult, RoutingCallOptions } from '@fayegram-ai/decision-bridge/routing';
 export type ReadonlyJsonValue = string | number | boolean | null | readonly ReadonlyJsonValue[] | { readonly [key: string]: ReadonlyJsonValue };
 export type { JsonValue } from '@fayegram-ai/decision-bridge';
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> } : T;
 export type Operation = 'decision' | 'extraction' | 'live';
-export const VERSION: '0.1.1';
+export const VERSION: '0.1.2';
 export const SCHEMA_VERSION: 3;
-export interface ErrorDetails { readonly code: string; readonly message: string; readonly stage?: string; readonly retryable?: boolean; readonly ambiguous?: boolean; readonly status?: number; readonly retryAfterMs?: number; readonly inputInvalid?: boolean; }
-export class ConnectorError extends Error { readonly code: string; constructor(code: string, message: string, details?: Partial<ErrorDetails>); }
+export interface ErrorDetails extends Readonly<BridgeErrorDetails> {
+    readonly stage?: string; readonly ambiguous?: boolean; readonly inputInvalid?: boolean;
+}
+type LocalErrorDetails = Pick<ErrorDetails, 'code' | 'message' | 'stage' | 'retryable' | 'ambiguous' | 'status' | 'retryAfterMs' | 'inputInvalid'>;
+export class ConnectorError extends Error {
+    readonly code: string; readonly stage?: string; readonly retryable?: boolean; readonly ambiguous?: boolean;
+    readonly status?: number; readonly retryAfterMs?: number; readonly inputInvalid?: boolean;
+    constructor(code: string, message: string, details?: Partial<LocalErrorDetails>);
+}
 export function publicError(error: unknown, stage?: string): ErrorDetails;
 
 export interface SubmissionSettings {
@@ -27,7 +34,8 @@ export interface Evaluator<Request = unknown, Result = unknown> {
     readonly operation?: Operation; readonly revision: string;
     validate?(request: Request): Request | void | Promise<Request | void>;
     execute(request: Request, context: ExecutionContext): Result | Promise<Result>;
-    validateSaved?(result: unknown, request: Request, context: ExecutionContext): Result | void | Promise<Result | void>;
+    /** Result-only submissions may supply arbitrary validation.request data or omit it. */
+    validateSaved?(result: unknown, request: Request | JsonValue | undefined, context: ExecutionContext): Result | void | Promise<Result | void>;
 }
 export interface ResultValidator<Result = unknown> {
     readonly revision: string; readonly provenance?: 'structural' | 'verified';
@@ -139,6 +147,7 @@ export type TaskChannelDisposition =
     | { readonly status: 'in_flight'; readonly attemptId: string; readonly expiresAt: number }
     | { readonly status: 'acknowledged' | 'submitted' | 'unknown' | 'failed'; readonly attemptId: string;
         readonly receipt?: JsonValue; readonly error?: ErrorDetails };
+export type EvaluationResolution = { status: 'succeeded'; reason: string; result: unknown } | { status: 'failed'; reason: string; result?: unknown };
 export interface ExecutionStore {
     readonly capabilities: { readonly durable: boolean; readonly distributed: boolean; readonly schemaVersion: 3; readonly atomicDeduplication: true; readonly fencing: true; readonly dataParts: true; readonly snapshots: true };
     readonly limits: Readonly<Required<ResourceLimits>>;
@@ -183,7 +192,7 @@ export interface ExecutionStore {
     mutateJob(namespace: string, jobId: string, operation: string, value?: unknown): Promise<string>;
     recordReply(namespace: string, taskId: string, reply: TaskChannelDisposition): Promise<void>;
     recordAcknowledgement(namespace: string, taskId: string, acknowledgement: TaskChannelDisposition): Promise<void>;
-    resolveEvaluation(namespace: string, taskId: string, resolution: { status: 'succeeded' | 'failed'; reason: string; result?: unknown }): Promise<void>;
+    resolveEvaluation(namespace: string, taskId: string, resolution: EvaluationResolution): Promise<void>;
     /** Null leaves storage unchanged. Serialize retirement with updates; rule quotas count retained groups across revisions, absent ruleId uses the namespace quota. */
     aggregate(namespace: string, key: string, update: (value: Record<string, unknown> | null) => Record<string, unknown> | null, maxGroups?: number): Promise<Record<string, unknown> | null>;
     dueAggregates(namespace: string, runtimeRevision?: string): Promise<Record<string, unknown>[]>;
@@ -204,7 +213,7 @@ export interface Runner {
     /** Retry a prepared payload after definite failure; planning failures require a new explicit execution. */
     retryDelivery(deliveryId: string): Promise<ExecutionReport | null>;
     resolveDelivery(deliveryId: string, resolution: { status: 'acknowledged' | 'failed'; receipt?: JsonValue }): Promise<ExecutionReport | null>;
-    resolveEvaluation(taskId: string, resolution: { status: 'succeeded'; reason: string; result: unknown } | { status: 'failed'; reason: string }, options?: { signal?: AbortSignal }): Promise<ExecutionReport | null>;
+    resolveEvaluation(taskId: string, resolution: EvaluationResolution, options?: { signal?: AbortSignal }): Promise<ExecutionReport | null>;
     recordCompletion(deliveryId: string, completion: DownstreamCompletion & { readonly status: 'completed' | 'failed' }): Promise<ExecutionReport | null>;
     cancel(taskId: string): Promise<ExecutionReport | null>;
     recover(): Promise<number>; maintain(): Promise<{ removed: number }>; inspect(): ReturnType<ExecutionStore['inspect']>; pending(): Promise<number>;

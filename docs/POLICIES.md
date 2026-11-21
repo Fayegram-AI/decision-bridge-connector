@@ -33,15 +33,15 @@ const template = {
 };
 ```
 
-The mapper requires the projected request to be an object. The selected evaluator
+The standalone `mapRequest` helper requires the projected request to be an object. The selected evaluator
 then performs operation-specific request and capability validation. Mapping itself
 does not select a model, invent missing questions, or contact a provider. Keep task
 IDs, correlation, source identities, and template revisions outside the strict
 Decision Bridge request.
 
-For a flow, `template` is the request projection itself: use the `request` member of
-the standalone template above. The flow passes that projected value to its evaluator;
-an external evaluator can define a different request contract. See [evaluators](EVALUATORS.md).
+For a flow, set `template` to the request projection itself, such as the `request`
+member of the standalone template above. A flow projection can produce any JSON
+value that its evaluator accepts. See [evaluators](EVALUATORS.md).
 
 `project(value, specification)` uses the same language for outgoing payloads:
 

@@ -18,7 +18,7 @@ assert.equal(lock.version, VERSION);
 assert.equal(lock.packages[''].version, VERSION);
 assert.equal(lock.packages[''].engines.node, manifest.engines.node, 'Node runtime requirements differ from the lockfile.');
 const coreVersion = manifest.dependencies['@fayegram-ai/decision-bridge'];
-assert.equal(coreVersion, '0.1.8', 'Connector requires the qualified Core SDK version.');
+assert.equal(coreVersion, '0.1.9', 'Connector requires the qualified Core SDK version.');
 assert.equal(lock.packages[''].dependencies['@fayegram-ai/decision-bridge'], coreVersion);
 assert.equal(lock.packages['node_modules/@fayegram-ai/decision-bridge'].version, coreVersion);
 assert.equal(JSON.parse(await readFile('node_modules/@fayegram-ai/decision-bridge/package.json', 'utf8')).version, coreVersion);

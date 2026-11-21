@@ -7,10 +7,14 @@ for Bridge adapters, external services, saved-result validators, and route selec
 ## Outgoing contracts
 
 An outgoing connector declares `name`, immutable `revision`, `capabilities`, and
-`send(payload, context)`. Context includes cancellation, task/evaluation routing context,
-stable `deliveryId`/`idempotencyKey`, a fresh `attemptId`, destination settings, and encoding.
-The receipt status is `acknowledged`, `submitted`, or `unknown`. Optional `completion` distinguishes
-accepted work from `pending`, `completed`, or `failed` downstream execution. A submitted receipt
+`send(payload, context)`. The runner passes an abort `signal`, the execution's
+`taskId`, an `eventId` set to the same value, and the configured `destination` and
+`encoding`. Retries reuse the `deliveryId` and `idempotencyKey`. Each send attempt
+gets a fresh `attemptId`.
+
+The receipt status is `acknowledged`, `submitted`, or `unknown`. The optional
+`completion.status` reports downstream work as `untracked`, `pending`, `completed`,
+`failed`, or `unknown`. Completion defaults to `untracked`. A submitted receipt
 without confirmed acceptance leaves delivery unknown. Throw `ConnectorError` with explicit
 `ambiguous: false` only when the recipient definitely did not accept the action. Without a saved
 acceptance checkpoint, errors lacking that explicit disposition leave the outcome unknown,
@@ -45,7 +49,7 @@ be reused without sharing validation state between runner instances.
 | File | Atomic writes under a configured directory using stable delivery identity; local placement required. `overwrite: true` declares non-idempotent output and cannot enable automatic ambiguous retry. |
 | Process | Literal executable and argument array, no shell interpolation; bounded stdin/stdout/stderr and kill grace. Local placement required. |
 | Redis Streams | `XADD` receipt identifies the stream entry; it does not establish consumer completion. Redis appends are not declared idempotent. |
-| MCP | Official client using stdio or Streamable HTTP; a tool response confirms transport acceptance, while `isError` marks tool completion failed. |
+| MCP | Uses stdio or Streamable HTTP. Stdio flow connections require a worker placement label. A tool response confirms transport acceptance, and `isError` marks tool completion failed. |
 
 HTTP response capture and process/MCP response receipts can feed an explicitly configured
 `nextFlow`. The next flow accepts an event containing the captured response and owns validation.
@@ -58,7 +62,7 @@ into an executable command or policy definition.
 
 ## Optional dependencies and ownership
 
-Install the peer for each integration you use, within the ranges declared by the package:
+The package declares these optional peer ranges.
 
 | Integration | Supported peer range | Install |
 | --- | --- | --- |
@@ -66,12 +70,16 @@ Install the peer for each integration you use, within the ranges declared by the
 | Redis Streams | `redis ^6.3.0` | `npm install "redis@^6.3.0"` |
 | MCP clients and servers | `@modelcontextprotocol/sdk ^1.32.2` | `npm install "@modelcontextprotocol/sdk@^1.32.2"` |
 
-Importing optional entry points does not connect to a service. Install the relevant peer before
-constructing its client or pool; MCP connectors also require the SDK when a client is supplied.
-Supplied Redis/MCP clients and PostgreSQL pools are borrowed; factories close only resources they own.
+Connector-managed PostgreSQL pools and Redis clients require their corresponding peers.
+A supplied PostgreSQL pool, Redis source client, or MCP client stays application-owned.
+`createRedisStreamConnector` also borrows the supplied client by default. Set
+`ownsClient: true` to have the connector close it. MCP still requires the SDK when
+the application supplies a client.
 
 ### Resource closure and capture
 
+With a Connector-managed MCP client, `stdio` starts the configured command. Streamable HTTP
+requires HTTPS for remote endpoints. Loopback endpoints also accept HTTP.
 MCP connector construction validates its timeout as a positive 32-bit millisecond integer, with a
 30000 ms default. `createMcpConnector(options, { signal })` accepts an optional startup signal.
 Cancellation closes the partially initialized owned transport, including its stdio process.
@@ -98,7 +106,6 @@ Repeated calls share the same shutdown result. A borrowed PostgreSQL pool remain
 
 ## HTTP and MCP hosts
 
-MCP stdio launches an explicit command; external HTTP endpoints require HTTPS outside loopback.
 HTTP handlers enforce a captured Host allowlist and reject browser Origin headers unless an exact
 `allowedOrigin` is configured. The default Host names are loopback; configure `allowedHosts` for
 deployment hostnames. See [HTTP hosting](NODE.md#http) for settings and proxy boundaries.
@@ -108,6 +115,9 @@ at startup before operations are exposed.
 MCP advertises explicit tool argument schemas for submit, run, preview, reads, and enabled admin operations.
 Schemas require exactly one matching input form, accept JSON validation contexts, and expose
 options for the specific operation. Redelivery and import require an explicit destination flow.
+When administration is enabled, `connectors_resolveEvaluation` requires a nonblank reason
+and a `result` for `status: 'succeeded'`. The tool accepts `null` as a recovered result
+if the configured validator accepts it.
 MCP server factories validate the runner and the permitted flow list before listening or connecting
 stdio. Flow entries must be unique, nonempty names available in the runner. HTTP handlers and
 direct MCP servers capture their permission settings and flow lists at construction; later
@@ -116,9 +126,9 @@ initialization failures produce HTTP 500 when a response is possible and close p
 MCP HTTP `maxBytes` defaults to 1 MiB and accepts integers from 1 byte through 64 MiB. Streamed requests are
 bounded by their actual bytes; pre-parsed bodies supplied by middleware are validated as JSON
 and bounded by their serialized representation. Middleware remains responsible for limiting
-the original wire body before parsing. Oversized input returns an empty HTTP 413 response;
-malformed input, including numeric overflow, returns empty HTTP 400 when the socket remains writable.
-Neither reaches tool dispatch.
+the original wire body before parsing. Oversized input returns HTTP 413. Malformed input,
+including numeric overflow, returns HTTP 400. A streamed body that takes longer than 30 seconds
+to read returns HTTP 408. These errors have empty bodies and occur before tool dispatch.
 The same setting bounds captured tool arguments in HTTP, stdio and direct servers. HTTP also
 counts the complete JSON-RPC envelope against its request budget. Raising this budget does not
 raise the runner's value limits or the MCP connector's response-retention limit.
@@ -149,7 +159,14 @@ inspection, and framed transfer operations declared by `ExecutionStore`. The run
 must survive live record changes and retirement; expiry/cleanup must preserve other owners.
 Hydrated reads must retain the selected metadata version's value ownership until all data
 has been read. Concurrent evidence replacement and collection must not invalidate a read.
-See [data access](DATA.md) for limits and transfer integrity.
+Make `closeSnapshot` and `closeImport` idempotent. The runner can retry these operations
+after a transient storage failure. See [data access](DATA.md) for limits and transfer integrity.
+
+`resolveEvaluation(namespace, taskId, resolution)` accepts only an `unknown` evaluation.
+Validate the status, nonblank reason and required success result before writing. Atomically
+check the job state and save the outcome with its audit evidence before returning the
+evaluation to the planning queue. A competing resolution that loses this race must fail with
+`CONFLICT`. The runner owns application-level validation of the recovered result.
 
 Custom execution stores implement `dueAggregates(namespace, runtimeRevision?)` with ownership
 filtering before the page limit. Due scans must progress across calls and wrap, including when

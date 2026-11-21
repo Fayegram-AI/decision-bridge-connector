@@ -9,7 +9,7 @@ a persistent host can instead own intake and background scheduling.
 
 Built-in evaluators use Decision Bridge for provider requests, validation, inference,
 extraction, routing, and native Live interpretation. Custom evaluators can call other
-services and own their request/result contracts. Decision Bridge 0.1.8 is an npm dependency.
+services and own their request/result contracts. The Connector pins the Decision Bridge version in `package.json`.
 The built-in adapters use its public exports and construct provider clients and routers
 in the application process.
 
@@ -67,15 +67,15 @@ the owning chain or un-emitted group can replay admission. Settled owners reject
 to create a new execution after deduplication expires.
 
 Runtime revisions include evaluator, validator, policy, transform, connector, and flow configuration
-identity, including every reachable chained flow. Workers claim only compatible revisions, even
-when only a downstream contract changes. Environment-reference names participate in
+identity, including every reachable chained flow. A worker claims jobs whose saved revision
+matches its flow fingerprint. Environment-reference names participate in
 configuration identity; resolved secret values do not. Change a descriptor revision when rotating
 credentials changes recipient identity or behavior. Retain old configuration/modules while their
 work is pending, including across restarts.
 
-An upgrade that changes runtime fingerprints requires the matching earlier runtime to drain or
-reconcile its saved work. Pending tasks and aggregation groups are never rebound to a different
-runtime automatically.
+Deploy one Connector release across the hosts that share a namespace. If flow fingerprints
+change, drain or reconcile pending work with the matching runtime. Pending tasks and
+aggregation groups retain their saved fingerprints. See [host upgrades](NODE.md#persistent-hosts).
 
 ## State and recovery
 
@@ -116,6 +116,19 @@ write response was lost. If no result was saved after invocation, recovery retai
 evaluation for reconciliation. Provider dispatch rechecks the earlier of `deadlineAt` and the
 flow timeout after marker persistence and passes only the remaining budget to the evaluator.
 
+Direct Cloudflare extraction can reject queued requests before the worker records
+invocation. That rejection settles as `failed` and can trigger failure outputs. See the
+[adapter requirements](EVALUATORS.md#cloudflare-extraction).
+
+For an `unknown` evaluation, call `resolveEvaluation(taskId, resolution)` with a nonblank
+audit reason. Use `status: 'succeeded'` with the recovered `result` (which may be `null`),
+or `status: 'failed'` when the provider confirms failure. The runner checks a recovered
+result against the original revision of the flow's validator or its evaluator's `validateSaved`
+method. A worker then resumes planning without another provider call. Only one of two competing
+resolutions can succeed. If a worker encounters an older
+reconciled record with neither a result nor evaluation failure evidence, it returns the task
+to `unknown` with an `INVALID_RESOLUTION` diagnostic.
+
 A connector may checkpoint confirmed acceptance through `context.onAcceptance(receipt)` before
 collecting optional response data. The runner validates and saves the acknowledged receipt for
 the current attempt. Recovery and cancellation preserve that evidence without resending. If
@@ -149,8 +162,12 @@ Each export captures a consistent task/jobs view and pins immutable values, then
 that capture transaction. Read operations return summaries; use [snapshots and data parts](DATA.md)
 for retained evidence. A list page may omit executions retired after selection; follow its
 non-null cursor even when the returned page has no items.
-Reprocessing, redelivery and import retain the original result-validation context, including
-custom JSON values. An available evaluated request supplies the authoritative request context.
+For result-only input, the validator receives the supplied JSON validation context, or an
+empty object if it was omitted or null. During recovery, reprocessing, redelivery or import
+of an evaluated request, the validator receives the normalized request as `validation.request`,
+including when normalization produced `null`. If the original context was a JSON object,
+its other fields are also available.
+Validators can edit their working copy while the execution retains the original evidence.
 Reprocessing, redelivery and reevaluation load task evidence without hydrating retained delivery
 payloads or receipts. An unavailable job body does not prevent deriving work from intact task evidence.
 `preview`, `reprocess`, `redeliver` and `reevaluate` accept an optional `signal` in their options;
@@ -161,11 +178,20 @@ started are allowed to finish.
 
 ## Independence and scheduling
 
-Required and optional outputs have separate claims. Required completion does not wait for optional
-outputs. `waitFor: 'settled'` waits for all jobs that can settle within the caller's wait budget.
-The wait budget includes claim acquisition. On expiry, the caller receives the most recent
-observed summary if available. An undispatched claim that arrives after expiry or cancellation
-returns to the queue.
+Required and optional outputs have separate claims. Required completion does not wait for
+optional outputs. `run` first admits work, then waits using the same options as `execute`.
+
+| `waitFor` | Milestone |
+| --- | --- |
+| `admitted` | Read the admitted execution without claiming work. |
+| `evaluated` | A result is available. A submitted result can satisfy this before policy and output planning. |
+| `required` | The report's `requiredSettled` flag is true. This includes required output and chain-admission outcomes. This is the default. |
+| `settled` | The report's `settled` flag is true, including optional work. |
+
+Any wait can return when the execution settles or the wait budget expires. On expiry, the
+caller receives the most recent observed summary if available. The default `waitMs` is
+60000 and includes claim acquisition. An undispatched claim that arrives after expiry or
+cancellation returns to the queue.
 `unknown` and `held` require intervention and remain retained. A caller wait timeout does not cancel
 durably admitted work. Explicit cancellation fences claims; an invoked effect may remain unknown.
 PostgreSQL cancellation waits for locked job rows before applying its fencing changes. Internal
@@ -217,8 +243,6 @@ request/result, policy decision, outgoing payload, receipt body and operator evi
 Metadata and diagnostics have separate bounds; execution size is not a per-value bound.
 See [inspection and transfer](DATA.md) for chunking, lease, paging and wire limits. A normalizing validator returns
 `undefined` to keep its input; `null` is a valid replacement value and is preserved.
-Evaluation reconciliation retains the original submission's validation metadata and supplies the
-normalized evaluated request as `validation.request`, overriding any caller-supplied request there.
 Retention rechecks locked records before deletion and coordinates task and dedup retirement with
 admission. Reopening an execution clears its old expiry; its next completion starts a fresh
 retention interval. Cancelling a required response chain after delivery produces partial completion.
@@ -295,10 +319,9 @@ an existing child before recording failure or expiry. Retention must preserve bo
 and its deduplication record while linkage is unsettled. The built-in stores provide these
 operations without additional database tables.
 
-Adding `chainRetry` changes the affected flow's runtime fingerprint, including upstream flows
-that reach it. Keep the matching earlier runtime available to drain or reconcile its pending
-work. Runtime identity also includes the saved schema version. Existing terminal chains are not
-automatically restarted; retain their captured response and diagnostics for operator recovery.
+Chain retry settings are part of the runtime fingerprint for that flow and any upstream
+flow that reaches it. The fingerprint also includes the saved schema version. Retain the
+captured response and diagnostics of terminal chains for operator recovery.
 
 Aggregation `maxGroups` applies to the named rule within its namespace, across all retained
 revisions. Emitted and discarded groups count until maintenance retires them; updating an
@@ -308,9 +331,8 @@ namespace-wide admission check and do not consume a named rule's quota. Retireme
 share a group lock and recheck the retained record before deletion. An updater that finds its
 group retired must pass the new-group capacity check before recreating it.
 
-The built-in stores index aggregation `ruleId`. Schema-v3 factories reject earlier saved
-schemas before mutation; deployments use fresh state and preserve older databases separately.
-There is no automatic schema migration or historical replay.
+The built-in stores index aggregation `ruleId`. See [schema compatibility](DATA.md#schema-boundary)
+when reusing a store or importing an archive.
 
 ## Observability and operating limits
 

@@ -112,7 +112,8 @@ export async function encodeRecord(table, row, stage) {
         out.resolution = { ...row.resolution };
         if (row.resolution.result !== undefined) out.resolution.result = await put(row.resolution.result);
         if (row.resolution.previousErrors !== undefined) out.resolution.previousErrors = await errors(row.resolution.previousErrors);
-        if (row.resolution.reason !== undefined) out.resolution.reason = await put(row.resolution.reason);
+        // The operator's audit note shares the metadata budget, independently of application results.
+        if (row.resolution.reason !== undefined) out.resolution.reason = await put(row.resolution.reason, 'diagnostic');
     }
     snapshot(out, { maxBytes: 61440 });
     return out;
